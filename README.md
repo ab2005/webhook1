@@ -10,6 +10,8 @@ npm install --save-dev @google-cloud/functions-framework
 
 [Call local functions](https://cloud.google.com/functions/docs/running/calling)
 
+[Call Cloud Functions directly](https://cloud.google.com/functions/docs/running/direct)
+
 
 gcloud functions deploy nodejs-http-function --gen2 --runtime=nodejs20 --region=REGION --source=. --entry-point=helloGET \
 --trigger-http
