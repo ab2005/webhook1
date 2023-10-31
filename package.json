@@ -1,0 +1,10 @@
+{
+  "dependencies": {
+    "@google-cloud/functions-framework": "^3.1.0",
+    "body-parser": "^1.18.3",
+    "dotenv": "^6.2.0",
+    "express": "^4.16.4",
+    "openai": "^4.14.1",
+    "request": "^2.88.0"
+  }
+}
