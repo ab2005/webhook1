@@ -6,5 +6,8 @@
     "express": "^4.16.4",
     "openai": "^4.14.1",
     "request": "^2.88.0"
+  },
+  "scripts": {
+    "start": "npx functions-framework --target=webhook1 --signature-type=http"
   }
 }
