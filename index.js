@@ -9,62 +9,91 @@ const
 functions.http('webhook', (req, res) => {
   try {
     if (req.method === 'GET') {
-      log("GET webhook");
-      const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
-      // Parse the query params 
-      let mode = req.query['hub.mode'];
-      let token = req.query['hub.verify_token'];
-      let challenge = req.query['hub.challenge'];
-      // Checks if a token and mode is in the query string of the request
-      if (mode && token) {
-        // Checks the mode and token sent is correct
-        if (mode === 'subscribe' && token === VERIFY_TOKEN) {
-        // Responds with the challenge token from the request
-        log('WEBHOOK_VERIFIED');
-        res.status(200).send(challenge);
-        } else {
-          log('WEBHOOK_FORBIDDEN');
-          // Responds with '403 Forbidden' if verify tokens do not match
-          res.sendStatus(403);
-        }
-      } else {
-        res.status(200).send("Hello challenge");
-        log("hello_challenge");
-      }
+      get(req, res);
     } else if (req.method === 'POST') {
-      log("POST: " + JSON.stringify(req.body));
-      let body = req.body;
-      // Checks if this is an event from a page subscription
-      if (body.object === 'page') {
-        // Iterates over each entry - there may be multiple if batched
-        body.entry.forEach(function(entry) {
-          // Gets the body of the webhook event
-          let webhookEvent = entry.messaging[0];
-          log(webhookEvent);
-          // Get the sender PSID
-          let senderPsid = webhookEvent.sender.id;
-          log('Sender PSID: ' + senderPsid);
-          // Check if the event is a message or postback and
-          // pass the event to the appropriate handler function
-          if (webhookEvent.message) {
-            handleMessage(webhookEvent, webhookEvent.message);
-          } else if (webhookEvent.postback) {
-            handlePostback(webhookEvent, webhookEvent.postback);
-          }
-        });
-        // Returns a '200 OK' response to all requests
-        res.status(200).send('EVENT_RECEIVED');
-      } else {
-        log("Not page POST")
-        // Returns a '404 Not Found' if event is not from a page subscription
-        res.sendStatus(404);
-      }
-    } 
+      post(req, res);
+    }
   } catch (error) {
     log("An error occurred: " + error.message);
     res.status(500).send('Internal Server Error');
   }
 });
+
+function get(req, res) {
+  log("GET webhook");
+  const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
+  // Parse the query params
+  let mode = req.query['hub.mode'];
+  let token = req.query['hub.verify_token'];
+  let challenge = req.query['hub.challenge'];
+  // Checks if a token and mode is in the query string of the request
+  if (mode && token) {
+    // Checks the mode and token sent is correct
+    if (mode === 'subscribe' && token === VERIFY_TOKEN) {
+    // Responds with the challenge token from the request
+    log('WEBHOOK_VERIFIED');
+    res.status(200).send(challenge);
+    } else {
+      log("wrong challenge:"  +  mode + "," + token);
+      // Responds with '403 Forbidden' if verify tokens do not match
+      res.sendStatus(403);
+    }
+  } else {
+    res.status(200).send("GET webhook");
+    log("GET webhook");
+  }
+}
+
+function post(req, res) {
+  log("POST: " + JSON.stringify(req.body));
+  let body = req.body;
+  // Checks if this is an event from a page subscription
+  if (body.object === 'page') {
+    processPage(req);
+  } else if (body.promptHub) {
+    promptHub(body.promptHub);
+  } else {
+    log("POST" +  JSON.stringify(body));
+    // Returns a '404 Not Found' if event is not from a page subscription
+    res.sendStatus(404);
+  }
+  log("POST done!");
+  res.status(200).send('EVENT_RECEIVED');
+}
+
+function processPage(req) {
+  let data = req.body;
+  // Iterates over each entry - there may be multiple if batched
+  data.entry.forEach(function(entry) {
+    let webhook_event = entry.messaging[0];
+    log("Processing webhook_event: " + JSON.stringify(webhook_event));
+    // Get the sender PSID
+    let sender_psid = webhook_event.sender.id;
+    // Check if the event is a message or postback and generate a response
+    if (webhook_event.message) {
+      handleMessage(webhook_event);
+    } else if (webhook_event.postback) {
+      handlePostback(webhook_event);
+    }
+  });
+  // // Iterates over each entry - there may be multiple if batched
+  // body.entry.forEach(function(entry) {
+  //   // Gets the body of the webhook event
+  //   let webhookEvent = entry.messaging[0];
+  //   log(webhookEvent);
+  //   // Get the sender PSID
+  //   let senderPsid = webhookEvent.sender.id;
+  //   log('Sender PSID: ' + senderPsid);
+  //   // Check if the event is a message or postback and
+  //   // pass the event to the appropriate handler function
+  //   if (webhookEvent.message) {
+  //     handleMessage(webhookEvent, webhookEvent.message);
+  //   } else if (webhookEvent.postback) {
+  //     handlePostback(webhookEvent, webhookEvent.postback);
+  //   }
+  // });
+  // Returns a '200 OK' response to all requests
+}
 
 // Handles messages events
 function handleMessage(webhookEvent, receivedMessage) {
@@ -241,7 +270,7 @@ async function agent(userInput) {
       model: "gpt-4",
       messages: messages
   });
-  
+
   return response.choices[0].message.content;
 }
 
@@ -284,4 +313,31 @@ async function weatherAgent(userInput) {
       }
   }
   return "The maximum number of iterations has been met without a suitable answer. Please try again with a more specific input.";
+}
+
+function promptHub(pid) {
+  log(pid);
+  fetch(`https://app.prompthub.us/api/v1/projects/${pid}/run`, {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'Accept': 'application/json',
+    'Authorization': 'Bearer Pib6eetNzwYzxaaBRkMhYAmk345VGsgPtHYtpUtJ6e0e7ade'
+  },
+  body: JSON.stringify({
+    metadata: {
+      user_id: 42,
+      user_email: 'towel@fourty-two.rocks',
+      user_name: 'Douglas Adams',
+      user_avatar: 'https://assets.prompthub.us/image/42',
+      subject_id: 28
+    },
+    variables: {
+      type: 'Song',
+      subject: 'Galaxies'
+    }
+  })
+})
+.then(res => res.json())
+.then(res => console.log(res));
 }
