@@ -56,7 +56,7 @@ function post(req, res) {
   } else if (body.promptHub) {
     promptHub(body.promptHub);
   } else {
-    log("POST" +  JSON.stringify(body));
+    log(`Not a "page": ` +  JSON.stringify(body));
     // Returns a '404 Not Found' if event is not from a page subscription
     res.sendStatus(404);
   }
