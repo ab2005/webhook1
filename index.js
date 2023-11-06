@@ -13,6 +13,9 @@ functions.http('webhook', (req, res) => {
     } else if (req.method === 'POST') {
       post(req, res);
     }
+
+    return Promise.resolve();
+
   } catch (error) {
     log("An error occurred: " + error.message);
     res.status(500).send('Internal Server Error');
@@ -57,6 +60,7 @@ function post(req, res) {
     // Returns a '404 Not Found' if event is not from a page subscription
     res.sendStatus(404);
   }
+
   log("POST done!");
   res.status(200).send('EVENT_RECEIVED');
 }
@@ -65,7 +69,7 @@ function processPage(req) {
   let data = req.body;
   // Iterates over each entry - there may be multiple if batched
   data.entry.forEach(function(entry) {
-    let webhook_event = entry.messaging[0];
+    let webhook_event = (entry.messaging || entry.standby )[0];
     log("Processing webhook_event: " + JSON.stringify(webhook_event));
     // Get the sender PSID
     let sender_psid = webhook_event.sender.id;
@@ -76,29 +80,14 @@ function processPage(req) {
       handlePostback(webhook_event);
     }
   });
-  // // Iterates over each entry - there may be multiple if batched
-  // body.entry.forEach(function(entry) {
-  //   // Gets the body of the webhook event
-  //   let webhookEvent = entry.messaging[0];
-  //   log(webhookEvent);
-  //   // Get the sender PSID
-  //   let senderPsid = webhookEvent.sender.id;
-  //   log('Sender PSID: ' + senderPsid);
-  //   // Check if the event is a message or postback and
-  //   // pass the event to the appropriate handler function
-  //   if (webhookEvent.message) {
-  //     handleMessage(webhookEvent, webhookEvent.message);
-  //   } else if (webhookEvent.postback) {
-  //     handlePostback(webhookEvent, webhookEvent.postback);
-  //   }
-  // });
-  // Returns a '200 OK' response to all requests
 }
 
 // Handles messages events
-function handleMessage(webhookEvent, receivedMessage) {
+function handleMessage(webhookEvent) {
   let senderPsid = webhookEvent.sender.id;
   let pageID = webhookEvent.recipient.id;
+  let receivedMessage = webhookEvent.message;
+
   log("handleMessage " + senderPsid + " : " + receivedMessage);
   let response;
   // Checks if the message contains text
@@ -144,9 +133,10 @@ function handleMessage(webhookEvent, receivedMessage) {
         }
       }
     };
+
+    // Send the response message
+    callSendAPI(webhookEvent, response);
   }
-  // Send the response message
-  callSendAPI(webhookEvent, response);
 }
 
 // Handles messaging_postbacks events
@@ -169,8 +159,18 @@ function handlePostback(webhookEvent, receivedPostback) {
 function callSendAPI(webhookEvent, response) {
   let senderPsid = webhookEvent.sender.id;
   let pageID = webhookEvent.recipient.id;
+
   // The page access token we have generated in your app settings
-  const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
+  const pageTokenEntry = pageTokens.find(pt => pt.pageID === pageID);
+  if (!pageTokenEntry) {
+    throw new Error(`PageID ${pageID} not found in pageTokens array.`);
+  }
+//  const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
+
+  const PAGE_ACCESS_TOKEN = pageTokenEntry.token;
+  const pageName = pageTokenEntry.name;
+  console.log(`Sending message to ${senderPsid} on behalf of ${pageName}`);
+
   log(senderPsid +  ", token=" + PAGE_ACCESS_TOKEN);
   // Construct the message body
   let requestBody = {
@@ -274,47 +274,6 @@ async function agent(userInput) {
   return response.choices[0].message.content;
 }
 
-async function weatherAgent(userInput) {
-  messages.push({
-      role: "user",
-      content: userInput,
-  });
-
-  for (let i = 0; i < 5; i++) {
-      const response = await openai.chat.completions.create({
-          model: "gpt-4",
-          messages: messages,
-          functions: functionDefinitions
-      });
-
-      const { finish_reason, message } = response.choices[0];
-      console.log(message);
-
-
-      if (finish_reason === "function_call") {
-          const functionName = message.function_call.name;
-          const functionToCall = availableFunctions[functionName];
-          const functionArgs = JSON.parse(message.function_call.arguments);
-          const functionArgsArr = Object.values(functionArgs);
-          const functionResponse = await functionToCall.apply(null, functionArgsArr);
-
-          messages.push({
-              role: "function",
-              name: functionName,
-              content: `
-              The result of the last function was this: ${JSON.stringify(functionResponse)}
-              `
-          });
-      }
-
-      else if (finish_reason === "stop") {
-          messages.push(message);
-          return message.content;
-      }
-  }
-  return "The maximum number of iterations has been met without a suitable answer. Please try again with a more specific input.";
-}
-
 function promptHub(pid) {
   log(pid);
   fetch(`https://app.prompthub.us/api/v1/projects/${pid}/run`, {
@@ -340,4 +299,61 @@ function promptHub(pid) {
 })
 .then(res => res.json())
 .then(res => console.log(res));
+}
+
+
+// ---- new code ---------------------------------------------------------------
+
+const pageTokens = [{
+  'name': 'Chloe',
+  'pageID': '129830246883745',
+  'token': 'EAAEMK9gufMEBOzXElrrJISPOcuQYuCQFDmwa47PnBVCAt2VvtO2ZBCyGl7SDJk7jpmzYtZAO87aEMtYHn0zmh6BgOSHioI5pLEojBZAI8OyCZBllZAZASX7xqiJE7L8C8ZC3SwZBiqZBvNKDP5wlNbX403dFn4e9iGIV4gohtt2RpTdGkochXZAKl00LsS6dMCGgZDZD'
+}, {
+  'name': 'Gleb',
+  'pageID': '139249235935855',
+  'token': 'EAAEMK9gufMEBO5dYHjO7AWmWUZAsIrRk9vTl98PvQwU8Fy4rI3Tx0ZBh1jNvItU2eQyZBIAFpvkWZCNJgGKR0g0FB8GczPSEqBFYXvP8OP6Ow2Keic75eJOk2gVDiIqiwuNazPNcYkGVJm7HczGXzoduwJRnM0Yp9tE7wUgNT3lyYvfrSsqFm8RDzwtFSQZDZD'
+}, {
+  'name': 'Gleb V1',
+  'pageID': '144905368686649',
+  'token': 'EAAEMK9gufMEBO4V2uiZA2kvmZACTI7uLFN9jOLhXiZBHk3ZCnjvmZBryrVMQwWA3PMnBRi5Cusr7ZBMLwEebAHmQdWcSZC6yRZBRJZAZAL11tRTZBXif8YqyFuV4n7H46HIjLo5BGEDIZAZAlqb5tnGXahTaSxNNrx6nZA8JZB8HiymZAhqjPtYMDFZBJcqNKQGLvND05pQZDZD'
+}, {
+  'name': 'New-i',
+  'pageID': '156845804176635',
+  'token': 'EAAEMK9gufMEBOxPktHTPzVIsQUkbE16ndEWFJXBeGaZBVZATB7Fs9MZBkN4eLBb1Ie31KAwL9ZAt1WutZB7NNGHSWnUu0ZBH4x38lkGhMWE2xGY0q0UyGZAG8N7bQXZAil1HLHSvCJ7I3GxIm0jllcDS3d7cPnLNLSlES7qQkKZCM6BIEhkL6oZBbkmzxjFbPB4gZDZD'
+},{
+  'name': 'Sunny Zajchonok',
+  'pageID': '146944785160996',
+  'token': 'EAAEMK9gufMEBOxkiOHtIzSBDLMJIsZCZAQRdUlgZCvqpwCMTa2ZAJIP1jKuZABZAWvxzbqNnQ1SvVVvnuw7DpcLZBbZBArJcC2fOk5jUgEdWM8EvD7QlYP0nZB52mQSmxAenoiDGd6gJZB0ZAT4tYuHD8H0nZCyc62sAgK0pHNhcLHbUFOAjTFHCKm6YSt1e6TCm6QZDZD'
+}];
+
+// Assuming request is properly required from a library like axios
+const axios = require('axios');
+
+async function sendTextMessage(pageID, userID, text) {
+  const pageTokenEntry = pageTokens.find(pt => pt.pageID === pageID);
+  if (!pageTokenEntry) {
+    throw new Error(`PageID ${pageID} not found in pageTokens array.`);
+  }
+  const pageToken = pageTokenEntry.token;
+  const pageName = pageTokenEntry.name;
+  console.log(`Sending message to ${userID} on behalf of ${pageName}`);
+
+  try {
+    const response = await axios({
+      method: 'post',
+      url: 'https://graph.facebook.com/v2.6/me/messages',
+      params: { access_token: pageToken },
+      data: {
+        recipient: { id: userID },
+        message: { text: text }
+      }
+    });
+    console.log('Message sent successfully:', response.data);
+    // If you need to return something from the function:
+    return response.data;
+  } catch (error) {
+    console.error('Failed to send message:', error);
+    // Re-throw the error if you want the calling function to handle it
+    throw error;
+  }
 }

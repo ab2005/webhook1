@@ -1,0 +1,268 @@
+{
+    "sender": {
+        "id": "7535240226492169"
+    },
+    "recipient": {
+        "id": "144905368686649"
+    },
+    "timestamp": 1699055388371,
+    "message": {
+        "mid": "m_DRXijkAnn7JZHihlohtKryQ5J6dFd7QeHK2WoSr0c-UHf4FHPFSy-CK5ZkHUq4AS8b_gYcBzg-jTrpyxkU2JMg",
+        "text": "test",
+        "nlp": {
+            "intents": [],
+            "entities": {},
+            "traits": {
+                "wit$sentiment": [
+                    {
+                        "id": "5ac2b50a-44e4-466e-9d49-bad6bd40092c",
+                        "value": "neutral",
+                        "confidence": 0.6777
+                    }
+                ]
+            },
+            "detected_locales": [
+                {
+                    "locale": "en_XX",
+                    "confidence": 0.7633
+                }
+            ]
+        }
+    }
+},
+{
+    "object": "page",
+    "entry": [
+        {
+            "id": "129830246883745",
+            "time": 1699062714212,
+            "standby": [
+                {
+                    "sender": {
+                        "id": "7739362776082074"
+                    },
+                    "recipient": {
+                        "id": "129830246883745"
+                    },
+                    "timestamp": 1699062690792,
+                    "message": {
+                        "mid": "m_WNqKemXihqi0hTki9BRQvdstW4GpRzkYMYj7NCq3mIGJhG5BhHJ2ZUKXFQKUEPXlGuJ9_0AM9O9aILfsXC9PpA",
+                        "text": "hwllp"
+                    }
+                }
+            ]
+        }
+    ]
+}
+
+
+=============
+
+{
+    "object": "page",
+    "entry": [
+        {
+            "id": "129830246883745",
+            "time": 1699063735092,
+            "standby": [
+                {
+                    "sender": {
+                        "id": "7739362776082074"
+                    },
+                    "recipient": {
+                        "id": "129830246883745"
+                    },
+                    "timestamp": 1699062690792,
+                    "message": {
+                        "mid": "m_WNqKemXihqi0hTki9BRQvdstW4GpRzkYMYj7NCq3mIGJhG5BhHJ2ZUKXFQKUEPXlGuJ9_0AM9O9aILfsXC9PpA",
+                        "text": "hwllp"
+                    }
+                }
+            ]
+        }
+    ]
+}
+{
+    "object": "page",
+    "entry": [
+        {
+            "id": "144905368686649",
+            "time": 1699063785890,
+            "messaging": [
+                {
+                    "sender": {
+                        "id": "7535240226492169"
+                    },
+                    "recipient": {
+                        "id": "144905368686649"
+                    },
+                    "timestamp": 1699063785557,
+                    "message": {
+                        "mid": "m_GZWSBHI96oDNR3voOB8h3SQ5J6dFd7QeHK2WoSr0c-UZa8iQ88aidzmRc9Uw3kG3NCOzcB5UP8y005yxSSnAzA",
+                        "text": "adsfasdfasdf",
+                        "nlp": {
+                            "intents": [],
+                            "entities": {
+                                "wit$location:location": [
+                                    {
+                                        "id": "624173841772436",
+                                        "name": "wit$location",
+                                        "role": "location",
+                                        "start": 0,
+                                        "end": 12,
+                                        "body": "adsfasdfasdf",
+                                        "confidence": 0.8349,
+                                        "entities": {},
+                                        "suggested": true,
+                                        "value": "adsfasdfasdf",
+                                        "type": "value"
+                                    }
+                                ]
+                            },
+                            "traits": {},
+                            "detected_locales": [
+                                {
+                                    "locale": "en_XX",
+                                    "confidence": 0.4854
+                                }
+                            ]
+                        }
+                    }
+                }
+            ]
+        }
+    ]
+}
+{
+    "entry": [
+        {
+            "id": "146944785160996",
+            "time": 1699305859,
+            "changes": [
+                {
+                    "value": {
+                        "from": {
+                            "id": "6576488652472796",
+                            "name": "Alexandre Barilov"
+                        },
+                        "post": {
+                            "status_type": "added_photos",
+                            "is_published": true,
+                            "updated_time": "2023-11-06T20:24:03+0000",
+                            "permalink_url": "https://www.facebook.com/permalink.php?story_fbid=pfbid0hWgowAucjd5NFVNviqPsPwcjLpFaGgrrnEy3gsdo1REtUF6Dti2U4iE3Pc8ASCeWl&id=61551911970325",
+                            "promotion_status": "inactive",
+                            "id": "146944785160996_122120746376063732"
+                        },
+                        "post_id": "146944785160996_122120746376063732",
+                        "comment_id": "122120746376063732_285834170451449",
+                        "created_time": 1699305856,
+                        "item": "comment",
+                        "parent_id": "146944785160996_122120746376063732",
+                        "verb": "remove"
+                    },
+                    "field": "feed"
+                }
+            ]
+        }
+    ],
+    "object": "page"
+}
+{
+    "entry": [
+        {
+            "id": "146944785160996",
+            "time": 1699305874,
+            "changes": [
+                {
+                    "value": {
+                        "from": {
+                            "id": "6576488652472796",
+                            "name": "Alexandre Barilov"
+                        },
+                        "post_id": "146944785160996_122120746376063732",
+                        "created_time": 1699305873,
+                        "item": "reaction",
+                        "parent_id": "146944785160996_122120746376063732",
+                        "reaction_type": "like",
+                        "verb": "add"
+                    },
+                    "field": "feed"
+                }
+            ]
+        }
+    ],
+    "object": "page"
+}
+
+
+{
+    "entry": [
+        {
+            "id": "144905368686649",
+            "time": 1699306362,
+            "changes": [
+                {
+                    "value": {
+                        "from": {
+                            "id": "7535240226492169",
+                            "name": "Alexandre Barilov"
+                        },
+                        "post": {
+                            "status_type": "added_photos",
+                            "is_published": true,
+                            "updated_time": "2023-11-06T21:32:40+0000",
+                            "permalink_url": "https://www.facebook.com/photo/?fbid=122099506058059293&set=a.122093156936059293",
+                            "promotion_status": "ineligible",
+                            "id": "144905368686649_122099506058059293"
+                        },
+                        "message": "Sunny Zajchonok can yoou comment on this?",
+                        "post_id": "144905368686649_122099506058059293",
+                        "comment_id": "122099506058059293_309523888522964",
+                        "created_time": 1699306360,
+                        "item": "comment",
+                        "parent_id": "6904024149676467_122099506058059293",
+                        "verb": "add"
+                    },
+                    "field": "feed"
+                }
+            ]
+        }
+    ],
+    "object": "page"
+}
+Mentions
+{
+    "entry": [
+        {
+            "id": "144905368686649",
+            "time": 1699306745,
+            "changes": [
+                {
+                    "value": {
+                        "from": {
+                            "id": "7535240226492169",
+                            "name": "Alexandre Barilov"
+                        },
+                        "post": {
+                            "status_type": "added_photos",
+                            "is_published": true,
+                            "updated_time": "2023-11-06T21:39:02+0000",
+                            "permalink_url": "https://www.facebook.com/photo/?fbid=122099506058059293&set=a.122093156936059293",
+                            "promotion_status": "ineligible",
+                            "id": "144905368686649_122099506058059293"
+                        },
+                        "message": "Sunny Zajchonok/Ai-persona can we talk all togetheer",
+                        "post_id": "144905368686649_122099506058059293",
+                        "comment_id": "122099506058059293_862868092212445",
+                        "created_time": 1699306742,
+                        "item": "comment",
+                        "parent_id": "6904024149676467_122099506058059293",
+                        "verb": "add"
+                    },
+                    "field": "feed"
+                }
+            ]
+        }
+    ],
+    "object": "page"
+}
