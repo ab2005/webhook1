@@ -1,0 +1,484 @@
+{====== Message =========}
+curl localhost:8080 -X POST -H "Content-Type: application/json" -d '
+{
+"object": "page",
+"entry": [
+    {
+        "id": "146944785160996",
+        "time": 1699362722941,
+        "messaging": [
+            {
+                "sender": {
+                    "id": "6576488652472796"
+                },
+                "recipient": {
+                    "id": "146944785160996"
+                },
+                "timestamp": 1699362722277,
+                "message": {
+                    "mid": "m__y4oOlA19luN-YuWznbe8-Vyp1jU5tGU0zINwyolhLT2GrICDQ8bLdgBhB5viM7KbkYgrbu8wqWg1MeMVnidyg",
+                    "text": "sunny message"
+                }
+            }
+        ]
+    }
+]
+}
+'
+VERIFIED
+
+====== Post to Page ==========
+curl localhost:8080 -X POST -H "Content-Type: application/json" -d '{"entry":[{"id":"146944785160996","time":1699363424,"changes":[{"value":{"from":{"id":"24360293243554509","name":"New-i Ai-host"},"message":"Post to Sunnys Page","post_id":"146944785160996_122121468812063732","created_time":1699363423,"item":"post","recipient_id":"146944785160996","verb":"edit"},"field":"feed"}]}],"object":"page"}'
+curl localhost:8080 -X POST -H "Content-Type: application/json" -d '
+{
+"object": "page",
+"entry": [
+    {
+        "id": "146944785160996",
+        "time": 1699363424,
+        "changes": [
+            {
+                "value": {
+                    "from": {
+                        "id": "24360293243554509",
+                        "name": "New-i Ai-host"
+                    },
+                    "message": "Post to Sunny Page",
+                    "post_id": "146944785160996_122121468812063732",
+                    "created_time": 1699363423,
+                    "item": "post",
+                    "recipient_id": "146944785160996",
+                    "verb": "edit"
+                },
+                "field": "feed"
+            }
+        ]
+    }
+]
+}'
+
+====== Comment on a post =============
+curl localhost:8080 -X POST -H "Content-Type: application/json" -d '_id":"122110487930091283_863797058574566","created_time":1699378114,"item":"comment","parent_id":"156845804176635_12211048793'
+
+
+'{"entry":[{"id":"146944785160996","time":1699363862,"changes":[{"value":{"from":{"id":"24360293243554509","name":"New-i Ai-host"},"post":{"status_type":"added_photos","is_published":true,"updated_time":"2023-11-07T13:31:00+0000","permalink_url":"https://www.facebook.com/permalink.php?story_fbid=122121280736063732","promotion_status":"ineligible","id":"146944785160996_122121280736063732"},"message":"Comment on a post","post_id":"146944785160996_122121280736063732","comment_id":"122121280736063732_884189722782586","created_time":1699363860,"item":"comment","parent_id":"146944785160996_122121280736063732","verb":"add"},"field":"feed"}]}],"object":"page"}'
+'{
+    "entry": [
+        {
+            "id": "146944785160996",
+            "time": 1699363862,
+            "changes": [
+                {
+                    "value": {
+                        "from": {
+                            "id": "24360293243554509",
+                            "name": "New-i Ai-host"
+                        },
+                        "post": {
+                            "status_type": "added_photos",
+                            "is_published": true,
+                            "updated_time": "2023-11-07T13:31:00+0000",
+                            "permalink_url": "https://www.facebook.com/permalink.php?story_fbid=122121280736063732",
+                            "promotion_status": "ineligible",
+                            "id": "146944785160996_122121280736063732"
+                        },
+                        "message": "Comment on a post",
+                        "post_id": "146944785160996_122121280736063732",
+                        "comment_id": "122121280736063732_884189722782586",
+                        "created_time": 1699363860,
+                        "item": "comment",
+                        "parent_id": "146944785160996_122121280736063732",
+                        "verb": "add"
+                    },
+                    "field": "feed"
+                }
+            ]
+        }
+    ],
+    "object": "page"
+}'
+----- add ------
+{
+    "entry": [
+        {
+            "id": "146944785160996",
+            "time": 1699364225,
+            "changes": [
+                {
+                    "value": {
+                        "from": {
+                            "id": "24360293243554509",
+                            "name": "New-i Ai-host"
+                        },
+                        "post": {
+                            "status_type": "wall_post",
+                            "is_published": true,
+                            "updated_time": "2023-11-07T13:37:04+0000",
+                            "permalink_url": "https://www.facebook.com/permalink.php?story_fbid=122121468812063732",
+                            "promotion_status": "ineligible",
+                            "id": "146944785160996_122121468812063732"
+                        },
+                        "message": "Another comment on a post",
+                        "post_id": "146944785160996_122121468812063732",
+                        "comment_id": "122121468812063732_1053672502441422",
+                        "created_time": 1699364224,
+                        "item": "comment",
+                        "parent_id": "146944785160996_122121468812063732",
+                        "verb": "add"
+                    },
+                    "field": "feed"
+                }
+            ]
+        }
+    ],
+    "object": "page"
+}
+----- edit ------
+{
+    "entry": [
+        {
+            "id": "146944785160996",
+            "time": 1699364225,
+            "changes": [
+                {
+                    "value": {
+                        "from": {
+                            "id": "24360293243554509",
+                            "name": "New-i Ai-host"
+                        },
+                        "message": "Post to Sunny's Page",
+                        "post_id": "146944785160996_122121468812063732",
+                        "created_time": 1699363423,
+                        "item": "post",
+                        "recipient_id": "146944785160996",
+                        "verb": "edit"
+                    },
+                    "field": "feed"
+                }
+            ]
+        }
+    ],
+    "object": "page"
+}
+
+============= Reply to comment with mention ========
+'{"entry":[{"id":"146944785160996","time":1699364570,"changes":[{"value":{"from":{"id":"24360293243554509","name":"New-i Ai-host"},"post":{"status_type":"wall_post","is_published":true,"updated_time":"2023-11-07T13:42:47+0000","permalink_url":"https://www.facebook.com/permalink.php?story_fbid=122121348074063732","promotion_status":"ineligible","id":"146944785160996_122121348074063732"},"message":"Sunny Zajchonok reply to comment with mention","post_id":"146944785160996_122121348074063732","comment_id":"122121348074063732_719485380212576","created_time":1699364567,"item":"comment","parent_id":"122121348074063732_320169527413819","verb":"add"},"field":"feed"}]}],"object":"page"}'
+----- comment added (@mention does not mater) ------
+{
+    "entry": [
+        {
+            "id": "146944785160996",
+            "time": 1699364570,
+            "changes": [
+                {
+                    "value": {
+                        "from": {
+                            "id": "24360293243554509",
+                            "name": "New-i Ai-host"
+                        },
+                        "post": {
+                            "status_type": "wall_post",
+                            "is_published": true,
+                            "updated_time": "2023-11-07T13:42:47+0000",
+                            "permalink_url": "https://www.facebook.com/permalink.php?story_fbid=122121348074063732",
+                            "promotion_status": "ineligible",
+                            "id": "146944785160996_122121348074063732"
+                        },
+                        "message": "Sunny Zajchonok reply to comment with mention",
+                        "post_id": "146944785160996_122121348074063732",
+                        "comment_id": "122121348074063732_719485380212576",
+                        "created_time": 1699364567,
+                        "item": "comment",
+                        "parent_id": "122121348074063732_320169527413819",
+                        "verb": "add"
+                    },
+                    "field": "feed"
+                }
+            ]
+        }
+    ],
+    "object": "page"
+}
+----- edited ----
+{
+    "entry": [
+        {
+            "id": "146944785160996",
+            "time": 1699364570,
+            "changes": [
+                {
+                    "value": {
+                        "from": {
+                            "id": "24360293243554509",
+                            "name": "New-i Ai-host"
+                        },
+                        "message": "расскажи про себяzXc",
+                        "post_id": "146944785160996_122121348074063732",
+                        "created_time": 1699325951,
+                        "item": "post",
+                        "recipient_id": "146944785160996",
+                        "verb": "edit"
+                    },
+                    "field": "feed"
+                }
+            ]
+        }
+    ],
+    "object": "page"
+}
+
+====== Reply to a commenter on a post ===
+'{"entry":[{"id":"146944785160996","time":1699365320,"changes":[{"value":{"from":{"id":"24360293243554509","name":"New-i Ai-host"},"post":{"status_type":"mobile_status_update","is_published":true,"updated_time":"2023-11-07T13:55:14+0000","permalink_url":"https://www.facebook.com/permalink.php?story_fbid=pfbid0YrDF5w1f9M5Kvsi4gPozw3vWwRCmimHAaZzQSrpnjk5Gr8CiXehpwszd8v9UiVHGl&id=61551911970325","promotion_status":"ineligible","id":"146944785160996_122120742986063732"},"message":"Alexandre Barilov reply to a commenter on a post","post_id":"146944785160996_122120742986063732","comment_id":"122120742986063732_3406828089534670","created_time":1699365314,"item":"comment","parent_id":"122120742986063732_710143090643444","verb":"add"},"field":"feed"}]}],"object":"page"}'
+{
+    "entry": [
+        {
+            "id": "146944785160996",
+            "time": 1699365320,
+            "changes": [
+                {
+                    "value": {
+                        "from": {
+                            "id": "24360293243554509",
+                            "name": "New-i Ai-host"
+                        },
+                        "post": {
+                            "status_type": "mobile_status_update",
+                            "is_published": true,
+                            "updated_time": "2023-11-07T13:55:14+0000",
+                            "permalink_url": "https://www.facebook.com/permalink.php?story_fbid=pfbid0YrDF5w1f9M5Kvsi4gPozw3vWwRCmimHAaZzQSrpnjk5Gr8CiXehpwszd8v9UiVHGl&id=61551911970325",
+                            "promotion_status": "ineligible",
+                            "id": "146944785160996_122120742986063732"
+                        },
+                        "message": "Alexandre Barilov reply to a commenter on a post",
+                        "post_id": "146944785160996_122120742986063732",
+                        "comment_id": "122120742986063732_3406828089534670",
+                        "created_time": 1699365314,
+                        "item": "comment",
+                        "parent_id": "122120742986063732_710143090643444",
+                        "verb": "add"
+                    },
+                    "field": "feed"
+                }
+            ]
+        }
+    ],
+    "object": "page"
+}
+
+===== Reply to reply to a commenter on a post ===
+'{"entry":[{"id":"146944785160996","time":1699365625,"changes":[{"value":{"from":{"id":"24360293243554509","name":"New-i Ai-host"},"post":{"status_type":"mobile_status_update","is_published":true,"updated_time":"2023-11-07T14:00:19+0000","permalink_url":"https://www.facebook.com/permalink.php?story_fbid=pfbid0YrDF5w1f9M5Kvsi4gPozw3vWwRCmimHAaZzQSrpnjk5Gr8CiXehpwszd8v9UiVHGl&id=61551911970325","promotion_status":"ineligible","id":"146944785160996_122120742986063732"},"message":"user replies to himself","post_id":"146944785160996_122120742986063732","comment_id":"122120742986063732_714953883454756","created_time":1699365619,"item":"comment","parent_id":"122120742986063732_710143090643444","verb":"add"},"field":"feed"}]}],"object":"page"}'
+{
+    "entry": [
+        {
+            "id": "146944785160996",
+            "time": 1699365625,
+            "changes": [
+                {
+                    "value": {
+                        "from": {
+                            "id": "24360293243554509",
+                            "name": "New-i Ai-host"
+                        },
+                        "post": {
+                            "status_type": "mobile_status_update",
+                            "is_published": true,
+                            "updated_time": "2023-11-07T14:00:19+0000",
+                            "permalink_url": "https://www.facebook.com/permalink.php?story_fbid=pfbid0YrDF5w1f9M5Kvsi4gPozw3vWwRCmimHAaZzQSrpnjk5Gr8CiXehpwszd8v9UiVHGl&id=61551911970325",
+                            "promotion_status": "ineligible",
+                            "id": "146944785160996_122120742986063732"
+                        },
+                        "message": "user replies to himself",
+                        "post_id": "146944785160996_122120742986063732",
+                        "comment_id": "122120742986063732_714953883454756",
+                        "created_time": 1699365619,
+                        "item": "comment",
+                        "parent_id": "122120742986063732_710143090643444",
+                        "verb": "add"
+                    },
+                    "field": "feed"
+                }
+            ]
+        }
+    ],
+    "object": "page"
+}
+
+========== Mention in the comment repply =======
+'{"entry":[{"id":"146944785160996","time":1699365898,"changes":[{"value":{"from":{"id":"24360293243554509","name":"New-i Ai-host"},"post":{"status_type":"mobile_status_update","is_published":true,"updated_time":"2023-11-07T14:04:51+0000","permalink_url":"https://www.facebook.com/permalink.php?story_fbid=pfbid0YrDF5w1f9M5Kvsi4gPozw3vWwRCmimHAaZzQSrpnjk5Gr8CiXehpwszd8v9UiVHGl&id=61551911970325","promotion_status":"ineligible","id":"146944785160996_122120742986063732"},"message":"Sunny Zajchonok mention in the comment reply","post_id":"146944785160996_122120742986063732","comment_id":"122120742986063732_3675693809327442","created_time":1699365891,"item":"comment","parent_id":"122120742986063732_710143090643444","verb":"add"},"field":"feed"}]}],"object":"page"}'
+{
+    "entry": [
+        {
+            "id": "146944785160996",
+            "time": 1699365898,
+            "changes": [
+                {
+                    "value": {
+                        "from": {
+                            "id": "24360293243554509",
+                            "name": "New-i Ai-host"
+                        },
+                        "post": {
+                            "status_type": "mobile_status_update",
+                            "is_published": true,
+                            "updated_time": "2023-11-07T14:04:51+0000",
+                            "permalink_url": "https://www.facebook.com/permalink.php?story_fbid=pfbid0YrDF5w1f9M5Kvsi4gPozw3vWwRCmimHAaZzQSrpnjk5Gr8CiXehpwszd8v9UiVHGl&id=61551911970325",
+                            "promotion_status": "ineligible",
+                            "id": "146944785160996_122120742986063732"
+                        },
+                        "message": "Sunny Zajchonok mention in the comment reply",
+                        "post_id": "146944785160996_122120742986063732",
+                        "comment_id": "122120742986063732_3675693809327442",
+                        "created_time": 1699365891,
+                        "item": "comment",
+                        "parent_id": "122120742986063732_710143090643444",
+                        "verb": "add"
+                    },
+                    "field": "feed"
+                }
+            ]
+        }
+    ],
+    "object": "page"
+}
+
+==== Mention from a comment to another page =====
+'{"entry":[{"id":"139249235935855","time":1699366617,"changes":[{"value":{"from":{"id":"6514963698609905","name":"Alexandre Barilov"},"post":{"status_type":"added_photos","is_published":true,"updated_time":"2023-11-07T14:16:54+0000","permalink_url":"https://www.facebook.com/photo/?fbid=122101486718061715&set=a.122101486772061715","promotion_status":"ineligible","id":"139249235935855_122101486718061715"},"message":"Sunny Zajchonok mention fro a coment to another page","post_id":"139249235935855_122101486718061715","comment_id":"122101486718061715_1065627017950155","created_time":1699366614,"item":"comment","parent_id":"6819168244835399_122101486718061715","verb":"add"},"field":"feed"}]}],"object":"page"}'
+{
+    "entry": [
+        {
+            "id": "139249235935855",
+            "time": 1699366617,
+            "changes": [
+                {
+                    "value": {
+                        "from": {
+                            "id": "6514963698609905",
+                            "name": "Alexandre Barilov"
+                        },
+                        "post": {
+                            "status_type": "added_photos",
+                            "is_published": true,
+                            "updated_time": "2023-11-07T14:16:54+0000",
+                            "permalink_url": "https://www.facebook.com/photo/?fbid=122101486718061715&set=a.122101486772061715",
+                            "promotion_status": "ineligible",
+                            "id": "139249235935855_122101486718061715"
+                        },
+                        "message": "Sunny Zajchonok mention fro a coment to another page",
+                        "post_id": "139249235935855_122101486718061715",
+                        "comment_id": "122101486718061715_1065627017950155",
+                        "created_time": 1699366614,
+                        "item": "comment",
+                        "parent_id": "6819168244835399_122101486718061715",
+                        "verb": "add"
+                    },
+                    "field": "feed"
+                }
+            ]
+        }
+    ],
+    "object": "page"
+}
+
+======= SOmebody liked your page ====
+'{"entry":[{"id":"139249235935855","time":1699366617,"changes":[{"value":{"from":{"id":"6514963698609905","name":"Alexandre Barilov"},"post":{"status_type":"added_photos","is_published":true,"updated_time":"2023-11-07T14:16:54+0000","permalink_url":"https://www.facebook.com/photo/?fbid=122101486718061715&set=a.122101486772061715","promotion_status":"ineligible","id":"139249235935855_122101486718061715"},"message":"Sunny Zajchonok mention fro a coment to another page","post_id":"139249235935855_122101486718061715","comment_id":"122101486718061715_1065627017950155","created_time":1699366614,"item":"comment","parent_id":"6819168244835399_122101486718061715","verb":"add"},"field":"feed"}]}],"object":"page"}"
+{
+    "entry": [
+        {
+            "id": "139249235935855",
+            "time": 1699366617,
+            "changes": [
+                {
+                    "value": {
+                        "from": {
+                            "id": "6514963698609905",
+                            "name": "Alexandre Barilov"
+                        },
+                        "post": {
+                            "status_type": "added_photos",
+                            "is_published": true,
+                            "updated_time": "2023-11-07T14:16:54+0000",
+                            "permalink_url": "https://www.facebook.com/photo/?fbid=122101486718061715&set=a.122101486772061715",
+                            "promotion_status": "ineligible",
+                            "id": "139249235935855_122101486718061715"
+                        },
+                        "message": "Sunny Zajchonok mention fro a coment to another page",
+                        "post_id": "139249235935855_122101486718061715",
+                        "comment_id": "122101486718061715_1065627017950155",
+                        "created_time": 1699366614,
+                        "item": "comment",
+                        "parent_id": "6819168244835399_122101486718061715",
+                        "verb": "add"
+                    },
+                    "field": "feed"
+                }
+            ]
+        }
+    ],
+    "object": "page"
+}'
+
+
+====== Somebody liked on my post ======
+'{"entry":[{"id":"146944785160996","time":1699367507,"changes":[{"value":{"from":{"id":"24360293243554509","name":"New-i Ai-host"},"post_id":"146944785160996_122120740166063732","created_time":1699367505,"item":"reaction","parent_id":"146944785160996_122120740166063732","reaction_type":"like","verb":"add"},"field":"feed"}]}],"object":"page"}'
+{
+    "entry": [
+        {
+            "id": "146944785160996",
+            "time": 1699367507,
+            "changes": [
+                {
+                    "value": {
+                        "from": {
+                            "id": "24360293243554509",
+                            "name": "New-i Ai-host"
+                        },
+                        "post_id": "146944785160996_122120740166063732",
+                        "created_time": 1699367505,
+                        "item": "reaction",
+                        "parent_id": "146944785160996_122120740166063732",
+                        "reaction_type": "like",
+                        "verb": "add"
+                    },
+                    "field": "feed"
+                }
+            ]
+        }
+    ],
+    "object": "page"
+}
+
+====== Shared a post by sending a message =====
+'{"object":"page","entry":[{"id":"146944785160996","time":1699368044163,"messaging":[{"sender":{"id":"6576488652472796"},"recipient":{"id":"146944785160996"},"timestamp":1699368043943,"message":{"mid":"m_mwvT3qrHLwWYgZl5zgJREOVyp1jU5tGU0zINwyolhLQYW60S5ULQsyGRV2Q5WoSX5bPFO7hEOR-we8V3nQS67w","text":"What do you think?","attachments":[{"type":"fallback","payload":{"url":"https://www.facebook.com/groups/620318942655646/?multi_permalinks=877701236917414&ref=share","title":"Redheads"}}]}}]}]}'
+{
+    "object": "page",
+    "entry": [
+        {
+            "id": "146944785160996",
+            "time": 1699368044163,
+            "messaging": [
+                {
+                    "sender": {
+                        "id": "6576488652472796"
+                    },
+                    "recipient": {
+                        "id": "146944785160996"
+                    },
+                    "timestamp": 1699368043943,
+                    "message": {
+                        "mid": "m_mwvT3qrHLwWYgZl5zgJREOVyp1jU5tGU0zINwyolhLQYW60S5ULQsyGRV2Q5WoSX5bPFO7hEOR-we8V3nQS67w",
+                        "text": "What do you think?",
+                        "attachments": [
+                            {
+                                "type": "fallback",
+                                "payload": {
+                                    "url": "https://www.facebook.com/groups/620318942655646/?multi_permalinks=877701236917414&ref=share",
+                                    "title": "Redheads"
+                                }
+                            }
+                        ]
+                    }
+                }
+            ]
+        }
+    ]
+}

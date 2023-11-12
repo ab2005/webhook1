@@ -266,3 +266,157 @@ Mentions
     ],
     "object": "page"
 }
+
+Post
+{
+    "entry": [
+        {
+            "id": "146944785160996",
+            "time": 1699308265,
+            "changes": [
+                {
+                    "value": {
+                        "from": {
+                            "id": "24360293243554509",
+                            "name": "New-i Ai-host"
+                        },
+                        "message": "Санечка, привет!",
+                        "post_id": "146944785160996_122121291596063732",
+                        "created_time": 1699308263,
+                        "item": "post",
+                        "recipient_id": "146944785160996",
+                        "verb": "edit"
+                    },
+                    "field": "feed"
+                }
+            ]
+        }
+    ],
+    "object": "page"
+}
+
+{
+    "entry": [
+        {
+            "id": "146944785160996",
+            "time": 1699322052,
+            "changes": [
+                {
+                    "value": {
+                        "from": {
+                            "id": "146944785160996",
+                            "name": "Sunny Zajchonok"
+                        },
+                        "post": {
+                            "status_type": "wall_post",
+                            "is_published": true,
+                            "updated_time": "2023-11-07T01:54:11+0000",
+                            "permalink_url": "https://www.facebook.com/122121325424063732/posts/122121291596063732",
+                            "promotion_status": "ineligible",
+                            "id": "146944785160996_122121291596063732"
+                        },
+                        "message": "Здравствуйте! Я Gleb, ваш личный коуч, но, кажется, вы обращаетесь ко мне как к Санечке. Как я могу вам помочь сегодня?",
+                        "post_id": "146944785160996_122121291596063732",
+                        "comment_id": "122121291596063732_1067484220960036",
+                        "created_time": 1699322051,
+                        "item": "comment",
+                        "parent_id": "146944785160996_122121291596063732",
+                        "verb": "add"
+                    },
+                    "field": "feed"
+                }
+            ]
+        }
+    ],
+    "object": "page"
+}
+
+curl localhost:8080 \
+  -X POST \
+  -H "Content-Type: application/json" \
+  -d '
+{
+    "entry": [
+        {
+            "id": "144905368686649",
+            "time": 1699307407,
+            "changes": [
+                {
+                    "value": {
+                        "from": {
+                            "id": "7535240226492169",
+                            "name": "Alexandre Barilov"
+                        },
+                        "post": {
+                            "status_type": "added_photos",
+                            "is_published": true,
+                            "updated_time": "2023-11-06T21:39:02+0000",
+                            "permalink_url": "https://www.facebook.com/photo/?fbid=122099506058059293&set=a.122093156936059293",
+                            "promotion_status": "ineligible",
+                            "id": "144905368686649_122099506058059293"
+                        },
+                        "message": "SunnySunny can we talk all togetheer",
+                        "post_id": "144905368686649_122099506058059293",
+                        "comment_id": "122099506058059293_862868092212445",
+                        "created_time": 1699307406,
+                        "item": "comment",
+                        "parent_id": "6904024149676467_122099506058059293",
+                        "verb": "edited"
+                    },
+                    "field": "feed"
+                }
+            ]
+        }
+    ],
+    "object": "page"
+}'
+
+
+[
+    {
+        "id": "122120740598063732",
+        "name": "Типаж\n\nАрхетип (название одно из 20)\nОсновные функции. (Мотивации, 1-2)\nОсновные качества (характеристики, способы взаимодействия, проявления, 11)\nТип мышления. Способ обработки информации. Как он мыслит.\nЧерез что живет. Тело, эмоции, аналитическое мышление, система.\nГлавные ценности жизни. Что ценит больше всего.\nГормоны. \nКак ведет себя в бизнесе\nСтиль соблазнения.\nПоведение в негативных состояниях\nРекомендуемый выход из негативных состояний\nВнешность (пропорции, линии лица и тела)\nРекомендации по стилю одежды\nasdasd",
+        "images": [
+            {
+                "height": 920,
+                "source": "https://scontent-sjc3-1.xx.fbcdn.net/v/t39.30808-6/398446216_122120740592063732_2551405617241470918_n.jpg?_nc_cat=104&ccb=1-7&_nc_sid=5f2048&_nc_ohc=SRMVa28DrKgAX-veETJ&_nc_ht=scontent-sjc3-1.xx&edm=AC7C4-wEAAAA&oh=00_AfBqjwEVct8f44JrFuv_Ys1SDj8mJaq8XXyfHNzQPTRzpA&oe=65503FDC",
+                "width": 1358
+            },
+            {
+                "height": 720,
+                "source": "https://scontent-sjc3-1.xx.fbcdn.net/v/t39.30808-6/398446216_122120740592063732_2551405617241470918_n.jpg?stp=dst-jpg_p720x720&_nc_cat=104&ccb=1-7&_nc_sid=5f2048&_nc_ohc=SRMVa28DrKgAX-veETJ&_nc_ht=scontent-sjc3-1.xx&edm=AC7C4-wEAAAA&oh=00_AfBiTd3qhbZiTuJKJ1_rRYqHE9_08zzHpKb0py7NJ_YAdg&oe=65503FDC",
+                "width": 1063
+            },
+            {
+                "height": 600,
+                "source": "https://scontent-sjc3-1.xx.fbcdn.net/v/t39.30808-6/398446216_122120740592063732_2551405617241470918_n.jpg?stp=dst-jpg_p600x600&_nc_cat=104&ccb=1-7&_nc_sid=5f2048&_nc_ohc=SRMVa28DrKgAX-veETJ&_nc_ht=scontent-sjc3-1.xx&edm=AC7C4-wEAAAA&oh=00_AfBjcv1WPODnqeTVftQd_qZeoUK8j_XAWJFZLunp92I6cA&oe=65503FDC",
+                "width": 886
+            },
+            {
+                "height": 480,
+                "source": "https://scontent-sjc3-1.xx.fbcdn.net/v/t39.30808-6/398446216_122120740592063732_2551405617241470918_n.jpg?stp=dst-jpg_p480x480&_nc_cat=104&ccb=1-7&_nc_sid=5f2048&_nc_ohc=SRMVa28DrKgAX-veETJ&_nc_ht=scontent-sjc3-1.xx&edm=AC7C4-wEAAAA&oh=00_AfACaygKxEipaYPaU89Kh6qTXxSmnNYq7Trvk_FpOTih_w&oe=65503FDC",
+                "width": 709
+            },
+            {
+                "height": 320,
+                "source": "https://scontent-sjc3-1.xx.fbcdn.net/v/t39.30808-6/398446216_122120740592063732_2551405617241470918_n.jpg?stp=dst-jpg_p320x320&_nc_cat=104&ccb=1-7&_nc_sid=5f2048&_nc_ohc=SRMVa28DrKgAX-veETJ&_nc_ht=scontent-sjc3-1.xx&edm=AC7C4-wEAAAA&oh=00_AfAwEZnuJiwDOuqHzLeGDuzQmnsKThRw8tjqXsTwTmEKGw&oe=65503FDC",
+                "width": 472
+            },
+            {
+                "height": 540,
+                "source": "https://scontent-sjc3-1.xx.fbcdn.net/v/t39.30808-6/398446216_122120740592063732_2551405617241470918_n.jpg?stp=dst-jpg_p180x540&_nc_cat=104&ccb=1-7&_nc_sid=5f2048&_nc_ohc=SRMVa28DrKgAX-veETJ&_nc_ht=scontent-sjc3-1.xx&edm=AC7C4-wEAAAA&oh=00_AfB1a5fTFnu6_jN58y3cOVvr0OG-kNWDMD09yNMIKTZlqQ&oe=65503FDC",
+                "width": 797
+            },
+            {
+                "height": 130,
+                "source": "https://scontent-sjc3-1.xx.fbcdn.net/v/t39.30808-6/398446216_122120740592063732_2551405617241470918_n.jpg?stp=dst-jpg_p130x130&_nc_cat=104&ccb=1-7&_nc_sid=5f2048&_nc_ohc=SRMVa28DrKgAX-veETJ&_nc_ht=scontent-sjc3-1.xx&edm=AC7C4-wEAAAA&oh=00_AfBdyD1Bdnx2AeuolEJVL0ft0QPbgL8bWY5SWHgqUiaMuw&oe=65503FDC",
+                "width": 192
+            },
+            {
+                "height": 225,
+                "source": "https://scontent-sjc3-1.xx.fbcdn.net/v/t39.30808-6/398446216_122120740592063732_2551405617241470918_n.jpg?stp=dst-jpg_p75x225&_nc_cat=104&ccb=1-7&_nc_sid=5f2048&_nc_ohc=SRMVa28DrKgAX-veETJ&_nc_ht=scontent-sjc3-1.xx&edm=AC7C4-wEAAAA&oh=00_AfDu5tKjfntK8GYTEaMLb65JNsjRoB4QcNP1SydCajnHgQ&oe=65503FDC",
+                "width": 332
+            }
+        ]
+    }
+]
