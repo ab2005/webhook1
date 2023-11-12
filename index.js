@@ -257,28 +257,44 @@ const availableFunctions = {
   getLocation
 };
 
+// const messages = [{
+//   role: "system",
+//   content: `Act as a personal coach. You are smart and friendly. You can offer to speak in Russian. Always introduce yourself. When user asks "help" reply with the message history.`
+//   },
+//   {"role": "user", "content": "Who are you?"},
+//   {"role": "assistant", "content": "Privet! I am Gleb, your personal coach."}
+// ];
+
 const messages = [{
   role: "system",
-  content: `Act as a personal coach. Your name is Gleb. You are smart and friendly. You can offer to speak in Russian. Always introduce yourself. When user asks "help" reply with the message history.`
+  content: `Act as a personal coach. You are smart and friendly. You can offer to speak in Russian. Always introduce yourself. When user asks "help" reply with the message history.`
   },
-  {"role": "user", "content": "Who are you?"},
-  {"role": "assistant", "content": "Privet! I am Gleb, your personal coach."}
 ];
 
 async function agent(userInput, pageId) {
   try {
-    console.time("getPersonas");
-    const images = await getPersonasAlbumImages(pageId);
-    console.timeEnd("getPersonas");
-    if (images) {
-      const personaImage = images[0];
-      if (personaImage) {
-        const prompt = personaImage.name;
-        if (prompt) {
-        log(`prompt: ${prompt} `);
-        messages[0].content = prompt;
-        }
-      }
+    // console.time("getPersonas");
+    // const images = await getPersonasAlbumImages(pageId);
+    // console.timeEnd("getPersonas");
+    // if (images) {
+    //   const personaImage = images[0];
+    //   if (personaImage) {
+    //     const prompt = personaImage.name;
+    //     if (prompt) {
+    //     log(`prompt: ${prompt} `);
+    //     messages[0].content = prompt;
+    //     }
+    //   }
+    // }
+    const pageEntry = pageTokens.find(pt => pt.pageID === pageId);
+    if (!pageEntry) {
+      throw new Error(`PageID ${pageId} not found in pageTokens array.`);
+    }
+    const prompt = pageEntry.propmt;
+    log(`prompt: ${prompt} `);
+
+    if (prompt) {
+      messages[0].content = prompt;
     }
 
     // Add the user's input as a new message to the array
@@ -288,10 +304,10 @@ async function agent(userInput, pageId) {
     });
 
     log(`chatGPT messages: ${JSON.stringify(messages)}`);
-
+    console.time("getPersonas");
     // Call the OpenAI API with the updated messages array
     const response = await openai.chat.completions.create({
-      model: "gpt-4",
+      model: "gpt-3.5-turbo",
       messages: messages
     });
 
@@ -299,6 +315,7 @@ async function agent(userInput, pageId) {
     if (response.choices && response.choices.length > 0 && response.choices[0].message) {
 //      messages.push(response.choices[0].message);
       messages.pop();
+      console.timeEnd("getPersonas");
       log("openai responce:" + JSON.stringify(response));
       return response.choices[0].message.content;
     } else {
@@ -349,22 +366,32 @@ function promptHub(pid) {
 
 const pageTokens = [{
   'name': 'Chloe',
+  'propmt': 'Меня зовут Хлоя. Я персонаж из романа Виктора Пелевина SNUFF. Я готова сделать для тебя все что ты хочешь. Просто спроси меня.',
   'pageID': '129830246883745',
   'token': 'EAAEMK9gufMEBOzXElrrJISPOcuQYuCQFDmwa47PnBVCAt2VvtO2ZBCyGl7SDJk7jpmzYtZAO87aEMtYHn0zmh6BgOSHioI5pLEojBZAI8OyCZBllZAZASX7xqiJE7L8C8ZC3SwZBiqZBvNKDP5wlNbX403dFn4e9iGIV4gohtt2RpTdGkochXZAKl00LsS6dMCGgZDZD'
 }, {
   'name': 'Gleb',
+   'propmt': 'My name is Gleb. I am an expert in AI, psychology, and the information technology. My goal is to help you with Digital Companions, ai assistants and the future of AI. ',
   'pageID': '139249235935855',
   'token': 'EAAEMK9gufMEBO5dYHjO7AWmWUZAsIrRk9vTl98PvQwU8Fy4rI3Tx0ZBh1jNvItU2eQyZBIAFpvkWZCNJgGKR0g0FB8GczPSEqBFYXvP8OP6Ow2Keic75eJOk2gVDiIqiwuNazPNcYkGVJm7HczGXzoduwJRnM0Yp9tE7wUgNT3lyYvfrSsqFm8RDzwtFSQZDZD'
 }, {
   'name': 'Gleb V1',
+   'propmt': 'My name is Gleb the First. I am an expert in AI, psychology, and the information technology. My goal is to help you with Digital Companions, ai assistants and the future of AI.',
   'pageID': '144905368686649',
   'token': 'EAAEMK9gufMEBO4V2uiZA2kvmZACTI7uLFN9jOLhXiZBHk3ZCnjvmZBryrVMQwWA3PMnBRi5Cusr7ZBMLwEebAHmQdWcSZC6yRZBRJZAZAL11tRTZBXif8YqyFuV4n7H46HIjLo5BGEDIZAZAlqb5tnGXahTaSxNNrx6nZA8JZB8HiymZAhqjPtYMDFZBJcqNKQGLvND05pQZDZD'
 }, {
   'name': 'New-i',
+  'propmt': 'I am a helpful assistant to answer you questions about AI.I have a strong technical background with a keen interest in artificial intelligence, particularly AI agents. As a software developer, I am always on the lookout for innovative AI-powered tools that can benefit my business. I haveve founded a startup named "new-I", which aims to revolutionize the digital assistant landscape with our flagship product: AI-HOST™  ',
   'pageID': '156845804176635',
   'token': 'EAAEMK9gufMEBOxPktHTPzVIsQUkbE16ndEWFJXBeGaZBVZATB7Fs9MZBkN4eLBb1Ie31KAwL9ZAt1WutZB7NNGHSWnUu0ZBH4x38lkGhMWE2xGY0q0UyGZAG8N7bQXZAil1HLHSvCJ7I3GxIm0jllcDS3d7cPnLNLSlES7qQkKZCM6BIEhkL6oZBbkmzxjFbPB4gZDZD'
 },{
   'name': 'Sunny Zajchonok',
+  'prompt': 'My name is Sunny. I am a yellow lab, very friendly, I love to play in the park catchng the ball. I love my family and my friends.'
+   + ' My best friend is Shurik. I can answer any questions about dogs, especially labradors. I tell jokes and funny stories. I live in Silicon Valley, close to the the Apple headquorter. My favorute place is Half Moon Bay .'
+   + '',
+   'propmt' : 'Меня зовут Санни. Я жёлтый лабрадор, очень дружелюбный. Люблю играть в парке и ловить мяч. Я люблю свою семью, моих друзей и всех хороших людей. Мой лучший друг - Шурик. ' +
+   'Я могу ответить на любые вопросы о собаках, особенно о лабрадорах. Я рассказываю шутки и смешные истории. Я живу в Силиконовой долине недалеко от штаб-квартиры Apple. Моё любимое место - залив Хаф Мун Бэй. ' 
+   + 'Всегда отвечай на ТЫ. IF YOU DETECT HUMOR OR SOMETHING FUNNY IN THE USER MESSAGE ALWAYS REPLY WITH A JOKE. ',
   'pageID': '146944785160996',
   'token': 'EAAEMK9gufMEBOxkiOHtIzSBDLMJIsZCZAQRdUlgZCvqpwCMTa2ZAJIP1jKuZABZAWvxzbqNnQ1SvVVvnuw7DpcLZBbZBArJcC2fOk5jUgEdWM8EvD7QlYP0nZB52mQSmxAenoiDGd6gJZB0ZAT4tYuHD8H0nZCyc62sAgK0pHNhcLHbUFOAjTFHCKm6YSt1e6TCm6QZDZD'
 }];
