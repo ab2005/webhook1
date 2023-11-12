@@ -48,6 +48,7 @@ function get(req, res) {
 }
 
 function post(req, res) {
+  console.log(req.body);
   log("POST: " + JSON.stringify(req.body));
   let body = req.body;
   // Checks if this is an event from a page subscription
@@ -69,15 +70,19 @@ function processPage(req) {
   let data = req.body;
   // Iterates over each entry - there may be multiple if batched
   data.entry.forEach(function(entry) {
-    let webhook_event = (entry.messaging || entry.standby )[0];
-    log("Processing webhook_event: " + JSON.stringify(webhook_event));
-    // Get the sender PSID
-    let sender_psid = webhook_event.sender.id;
-    // Check if the event is a message or postback and generate a response
-    if (webhook_event.message) {
-      handleMessage(webhook_event);
-    } else if (webhook_event.postback) {
-      handlePostback(webhook_event);
+    if (entry.changes) {
+      replyToChanges(entry.changes, entry.id);
+    } else {
+      let webhook_event = (entry.messaging || entry.standby )[0];
+      log("Processing webhook_event: " + JSON.stringify(webhook_event));
+      // Get the sender PSID
+      let sender_psid = webhook_event.sender.id;
+      // Check if the event is a message or postback and generate a response
+      if (webhook_event.message) {
+        handleMessage(webhook_event);
+      } else if (webhook_event.postback) {
+        handlePostback(webhook_event);
+      }
     }
   });
 }
@@ -93,7 +98,7 @@ function handleMessage(webhookEvent) {
   // Checks if the message contains text
   if (receivedMessage.text) {
     log(senderPsid + " says : " + receivedMessage.text);
-    agent(receivedMessage.text)
+    agent(receivedMessage.text, pageID)
       .then(gptResponse => {
           response = {
               'text': gptResponse
@@ -181,7 +186,7 @@ function callSendAPI(webhookEvent, response) {
   };
   // Send the HTTP request to the Messenger Platform
   request({
-    'uri': 'https://graph.facebook.com/v2.6/me/messages',
+    'uri': 'https://graph.facebook.com/v18.0/me/messages',
     'qs': { 'access_token': PAGE_ACCESS_TOKEN },
     'method': 'POST',
     'json': requestBody
@@ -260,18 +265,56 @@ const messages = [{
   {"role": "assistant", "content": "Privet! I am Gleb, your personal coach."}
 ];
 
-async function agent(userInput) {
-  messages.push({
+async function agent(userInput, pageId) {
+  try {
+    console.time("getPersonas");
+    const images = await getPersonasAlbumImages(pageId);
+    console.timeEnd("getPersonas");
+    if (images) {
+      const personaImage = images[0];
+      if (personaImage) {
+        const prompt = personaImage.name;
+        if (prompt) {
+        log(`prompt: ${prompt} `);
+        messages[0].content = prompt;
+        }
+      }
+    }
+
+    // Add the user's input as a new message to the array
+    messages.push({
       role: "user",
       content: userInput,
-  });
+    });
 
-  const response = await openai.chat.completions.create({
+    log(`chatGPT messages: ${JSON.stringify(messages)}`);
+
+    // Call the OpenAI API with the updated messages array
+    const response = await openai.chat.completions.create({
       model: "gpt-4",
       messages: messages
-  });
+    });
 
-  return response.choices[0].message.content;
+    // Check the response for the expected structure and return the message content
+    if (response.choices && response.choices.length > 0 && response.choices[0].message) {
+//      messages.push(response.choices[0].message);
+      messages.pop();
+      log("openai responce:" + JSON.stringify(response));
+      return response.choices[0].message.content;
+    } else {
+      // If the response doesn't have the expected structure, throw an error
+      throw new Error("Invalid response structure");
+    }
+  } catch (error) {
+    // Log the error to the console
+    console.error(`An error occurred: ${error.message}`);
+
+    // Remove the last message that was added
+    messages.pop();
+
+    // Return a user-friendly error message or handle the error as appropriate
+    return "I'm sorry, but an error occurred while processing your request.";
+  }
 }
 
 function promptHub(pid) {
@@ -341,7 +384,7 @@ async function sendTextMessage(pageID, userID, text) {
   try {
     const response = await axios({
       method: 'post',
-      url: 'https://graph.facebook.com/v2.6/me/messages',
+      url: 'https://graph.facebook.com/v18.0/me/messages',
       params: { access_token: pageToken },
       data: {
         recipient: { id: userID },
@@ -357,3 +400,132 @@ async function sendTextMessage(pageID, userID, text) {
     throw error;
   }
 }
+
+function replyToChanges(changes, pageId) {
+  console.log(`replyToChanges ${JSON.stringify(changes)}`);
+  changes.forEach(change => {
+      if (change.field === `feed`) {
+          replyToFeed(change.value, pageId);
+      }
+  });
+}
+
+function replyToFeed(value, pageId) {
+  console.log(`replyToFeed ${JSON.stringify(value)}`);
+
+  if (value.verb != 'add' && value.verb != 'edit') return;
+
+  let postId = value.comment_id || value.post_id;
+  let message = value.message;
+
+  if (!message || !pageId)  return;
+
+  let event = value.item;
+  let senderId = value.from.id;
+
+  // Do not answet to yourself
+  if (senderId === pageId) {
+    log("Do not answet to yourself");
+    return;
+  }
+
+  log(`Reply to ${value.from.name}`);
+  let apiKey = process.env.OPENAI_API_KEY;
+  log("replyToFeed with " + message);
+
+  agent(message, pageId)
+    .then(gptResponse => {
+        response = {
+            'text': `@[${senderId}]-${gptResponse}`
+        };
+        // Send the response message
+        commentOnPost(pageId, postId, response.text);
+    })
+    .catch(error => {
+        console.error("Error processing agent response:", error);
+        // Handle error appropriately, perhaps send a message to the user
+    });
+};
+
+function commentOnPost(pageId, postId, message) {
+  const pageToken = getPageToken(pageId);
+  const url = `https://graph.facebook.com/v18.0/${postId}/comments`;
+
+  console.log(`commentOnPost with message "${message}",  post:${postId} token: ${pageToken}`);
+
+  axios.post(url, {
+    message: message
+  }, {
+    params: {
+      access_token: pageToken
+    }
+  })
+  .then(response => {
+    console.log('Comment successfully posted', response.data);
+  })
+  .catch(error => {
+    console.error('Error posting comment', error.response);
+  });
+}
+
+function getPageToken(pageID) {
+  const pageTokenEntry = pageTokens.find(pt => pt.pageID === pageID);
+  if (!pageTokenEntry) {
+    throw new Error(`PageID ${pageID} not found in pageTokens array.`);
+  }
+  return pageTokenEntry.token;
+}
+
+
+// Function to get the Album ID by name
+const getAlbumIdByName = async (pageId, albumName) => {
+  const accessToken = getPageToken(pageId);
+  const url = `https://graph.facebook.com/v18.0/${pageId}/albums?fields=name&access_token=${accessToken}`;
+  try {
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    const data = await response.json();
+    const album = data.data.find(a => a.name === albumName);
+    return album ? album.id : null;
+  } catch (error) {
+    console.error('Error fetching album ID:', error);
+  }
+};
+
+// Function to get images from the Album
+const getImagesFromAlbum = async (albumId, accessToken) => {
+  const url = `https://graph.facebook.com/v18.0/${albumId}/photos?fields=images,name&access_token=${accessToken}`;
+  try {
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    const data = await response.json();
+    return data.data.map(photo => ({
+      id: photo.id,
+      name: photo.name,
+      images: photo.images
+    }));
+  } catch (error) {
+    console.error('Error fetching images:', error);
+  }
+};
+
+// Main function to get images from an album named "Personas"
+const getPersonasAlbumImages = async (pageId) => {
+  try {
+    const accessToken = getPageToken(pageId);
+    const albumId = await getAlbumIdByName(pageId, "Personas", accessToken);
+    if (!albumId) {
+      console.error('Album "Personas" not found');
+      return;
+    }
+    const images = await getImagesFromAlbum(albumId, accessToken);
+    console.log(images);
+    return images;
+  } catch (error) {
+    console.error('Error getting images from album "Personas":', error);
+  }
+};
