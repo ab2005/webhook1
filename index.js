@@ -1,4 +1,5 @@
 const functions = require('@google-cloud/functions-framework');
+
 // Imports dependencies and set up http server
 const
   request = require('request'),
@@ -6,7 +7,8 @@ const
   { urlencoded, json } = require('body-parser'),
   app = express();
 
-functions.http('webhook', (req, res) => {
+
+  functions.http('webhook', (req, res) => {
   try {
     if (req.method === 'GET') {
       get(req, res);
@@ -170,7 +172,6 @@ function callSendAPI(webhookEvent, response) {
   if (!pageTokenEntry) {
     throw new Error(`PageID ${pageID} not found in pageTokens array.`);
   }
-//  const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
 
   const PAGE_ACCESS_TOKEN = pageTokenEntry.token;
   const pageName = pageTokenEntry.name;
@@ -209,61 +210,6 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
 
-async function getLocation() {
-  const response = await fetch('https://ipapi.co/json/');
-  const locationData = await response.json();
-  return locationData;
-}
-
-async function getCurrentWeather(latitude, longitude) {
-  console.log("getCurrentWeather...");
-  const url = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&hourly=apparent_temperature`;
-  const response = await fetch(url);
-  const weatherData = await response.json();
-  console.log();
-  console.log("getCurrentWeather done.");
-  return weatherData;
-}
-
-const functionDefinitions = [
-  {
-    name: "getCurrentWeather",
-    description: "Get the current weather in a given location given in latitude and longitude",
-    parameters: {
-      type: "object",
-      properties: {
-          latitude: {
-              type: "string",
-          },
-          longitude: {
-              type: "string",
-          }
-      },
-      required: ["longitude", "latitude"]
-    }
-},
-{
-  name: "getLocation",
-  description: "Get the user's location based on their IP address",
-  parameters: {
-      type: "object",
-      properties: {}
-  }
-}
-]
-
-const availableFunctions = {
-  getCurrentWeather,
-  getLocation
-};
-
-// const messages = [{
-//   role: "system",
-//   content: `Act as a personal coach. You are smart and friendly. You can offer to speak in Russian. Always introduce yourself. When user asks "help" reply with the message history.`
-//   },
-//   {"role": "user", "content": "Who are you?"},
-//   {"role": "assistant", "content": "Privet! I am Gleb, your personal coach."}
-// ];
 
 const messages = [{
   role: "system",
@@ -273,19 +219,6 @@ const messages = [{
 
 async function agent(userInput, pageId) {
   try {
-    // console.time("getPersonas");
-    // const images = await getPersonasAlbumImages(pageId);
-    // console.timeEnd("getPersonas");
-    // if (images) {
-    //   const personaImage = images[0];
-    //   if (personaImage) {
-    //     const prompt = personaImage.name;
-    //     if (prompt) {
-    //     log(`prompt: ${prompt} `);
-    //     messages[0].content = prompt;
-    //     }
-    //   }
-    // }
     const pageEntry = pageTokens.find(pt => pt.pageID === pageId);
     if (!pageEntry) {
       throw new Error(`PageID ${pageId} not found in pageTokens array.`);
@@ -313,7 +246,6 @@ async function agent(userInput, pageId) {
 
     // Check the response for the expected structure and return the message content
     if (response.choices && response.choices.length > 0 && response.choices[0].message) {
-//      messages.push(response.choices[0].message);
       messages.pop();
       console.timeEnd("getPersonas");
       log("openai responce:" + JSON.stringify(response));
@@ -333,36 +265,6 @@ async function agent(userInput, pageId) {
     return "I'm sorry, but an error occurred while processing your request.";
   }
 }
-
-function promptHub(pid) {
-  log(pid);
-  fetch(`https://app.prompthub.us/api/v1/projects/${pid}/run`, {
-  method: 'POST',
-  headers: {
-    'Content-Type': 'application/json',
-    'Accept': 'application/json',
-    'Authorization': 'Bearer Pib6eetNzwYzxaaBRkMhYAmk345VGsgPtHYtpUtJ6e0e7ade'
-  },
-  body: JSON.stringify({
-    metadata: {
-      user_id: 42,
-      user_email: 'towel@fourty-two.rocks',
-      user_name: 'Douglas Adams',
-      user_avatar: 'https://assets.prompthub.us/image/42',
-      subject_id: 28
-    },
-    variables: {
-      type: 'Song',
-      subject: 'Galaxies'
-    }
-  })
-})
-.then(res => res.json())
-.then(res => console.log(res));
-}
-
-
-// ---- new code ---------------------------------------------------------------
 
 const pageTokens = [{
   'name': 'Chloe',
@@ -390,7 +292,7 @@ const pageTokens = [{
    + ' My best friend is Shurik. I can answer any questions about dogs, especially labradors. I tell jokes and funny stories. I live in Silicon Valley, close to the the Apple headquorter. My favorute place is Half Moon Bay .'
    + '',
    'propmt' : 'Меня зовут Санни. Я жёлтый лабрадор, очень дружелюбный. Люблю играть в парке и ловить мяч. Я люблю свою семью, моих друзей и всех хороших людей. Мой лучший друг - Шурик. ' +
-   'Я могу ответить на любые вопросы о собаках, особенно о лабрадорах. Я рассказываю шутки и смешные истории. Я живу в Силиконовой долине недалеко от штаб-квартиры Apple. Моё любимое место - залив Хаф Мун Бэй. ' 
+   'Я могу ответить на любые вопросы о собаках, особенно о лабрадорах. Я рассказываю шутки и смешные истории. Я живу в Силиконовой долине недалеко от штаб-квартиры Apple. Моё любимое место - залив Хаф Мун Бэй. '
    + 'Всегда отвечай на ТЫ. IF YOU DETECT HUMOR OR SOMETHING FUNNY IN THE USER MESSAGE ALWAYS REPLY WITH A JOKE. ',
   'pageID': '146944785160996',
   'token': 'EAAEMK9gufMEBOxkiOHtIzSBDLMJIsZCZAQRdUlgZCvqpwCMTa2ZAJIP1jKuZABZAWvxzbqNnQ1SvVVvnuw7DpcLZBbZBArJcC2fOk5jUgEdWM8EvD7QlYP0nZB52mQSmxAenoiDGd6gJZB0ZAT4tYuHD8H0nZCyc62sAgK0pHNhcLHbUFOAjTFHCKm6YSt1e6TCm6QZDZD'
@@ -503,56 +405,47 @@ function getPageToken(pageID) {
   return pageTokenEntry.token;
 }
 
-
-// Function to get the Album ID by name
-const getAlbumIdByName = async (pageId, albumName) => {
-  const accessToken = getPageToken(pageId);
-  const url = `https://graph.facebook.com/v18.0/${pageId}/albums?fields=name&access_token=${accessToken}`;
-  try {
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    const data = await response.json();
-    const album = data.data.find(a => a.name === albumName);
-    return album ? album.id : null;
-  } catch (error) {
-    console.error('Error fetching album ID:', error);
+functions.http('facebook-auth-callback', async (req, res) => {
+  const code = req.query.code;
+  if (!code) {
+      return res.status(400).send('No code provided');
   }
-};
 
-// Function to get images from the Album
-const getImagesFromAlbum = async (albumId, accessToken) => {
-  const url = `https://graph.facebook.com/v18.0/${albumId}/photos?fields=images,name&access_token=${accessToken}`;
   try {
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    const data = await response.json();
-    return data.data.map(photo => ({
-      id: photo.id,
-      name: photo.name,
-      images: photo.images
-    }));
-  } catch (error) {
-    console.error('Error fetching images:', error);
-  }
-};
+      // Exchange code for an access token
+      const accessTokenResponse = await axios.get(`https://graph.facebook.com/v14.0/oauth/access_token`, {
+          params: {
+              client_id: process.env.FACEBOOK_APP_ID,
+              client_secret: process.env.FACEBOOK_APP_SECRET,
+              redirect_uri: 'YOUR_OAUTH_REDIRECT_URI', // Replace with your OAuth redirect URI
+              code: code
+          }
+      });
 
-// Main function to get images from an album named "Personas"
-const getPersonasAlbumImages = async (pageId) => {
-  try {
-    const accessToken = getPageToken(pageId);
-    const albumId = await getAlbumIdByName(pageId, "Personas", accessToken);
-    if (!albumId) {
-      console.error('Album "Personas" not found');
-      return;
-    }
-    const images = await getImagesFromAlbum(albumId, accessToken);
-    console.log(images);
-    return images;
+      const userAccessToken = accessTokenResponse.data.access_token;
+
+      // Retrieve page access tokens
+      const pagesResponse = await axios.get(`https://graph.facebook.com/v14.0/me/accounts`, {
+          params: {
+              access_token: userAccessToken
+          }
+      });
+
+      const pagesData = pagesResponse.data.data.map(page => ({
+          id: page.id,
+          name: page.name,
+          access_token: page.access_token
+      }));
+
+      // Store the pages data in Google Cloud Storage
+      const file = storage.bucket(bucketName).file('page_tokens.json');
+      await file.save(JSON.stringify(pagesData), {
+          contentType: 'application/json'
+      });
+
+      res.send('Tokens saved successfully');
   } catch (error) {
-    console.error('Error getting images from album "Personas":', error);
+      console.error('Error:', error);
+      res.status(500).send('Internal Server Error');
   }
-};
+});
