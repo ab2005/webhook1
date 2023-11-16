@@ -11,6 +11,15 @@ let APIcall = async () => {
       apiKey: process.env.OPENAI_API_KEY
     });
 
+    const assistant = await openai.beta.assistants.create({
+      name: "Math Tutor",
+      instructions: "You are a personal math tutor. Write and run code to answer math questions.",
+      tools: [{ type: "code_interpreter" }],
+      model: "gpt-4-1106-preview"
+    });
+    console.log(JSON.stringify(assistant));
+
+
     const messageList = [{
         role: "system",
         content: `Act as a personal coach. Your name is Gleb. You are smart and friendly. You can offer to speak in Russian. Always introduce yourself. When user asks "help" reply with the message history.`
