@@ -1,5 +1,9 @@
 const functions = require('@google-cloud/functions-framework');
 
+// config
+let keys;
+let config;
+
 // Imports dependencies and set up http server
 const
   request = require('request'),
@@ -7,24 +11,37 @@ const
   { urlencoded, json } = require('body-parser'),
   app = express();
 
+const { Storage } = require('@google-cloud/storage');
+const storage = new Storage();
+const bucket = storage.bucket('new-i');
 
-  functions.http('webhook', (req, res) => {
+const OpenAI = require("openai");
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY
+});
+
+functions.http('webhook', async (req, res) => {
   try {
-    if (req.method === 'GET') {
-      get(req, res);
-    } else if (req.method === 'POST') {
-      post(req, res);
+    // initialization
+    if (!(await loadConfig())) {
+      log("Initializing...");
+      await saveConfig();
     }
-
-    return Promise.resolve();
-
+    if (req.method === 'GET') {
+      onGet(req, res);
+    } else if (req.method === 'POST') {
+      await onPost(req, res);
+    }
   } catch (error) {
     log("An error occurred: " + error.message);
     res.status(500).send('Internal Server Error');
   }
+  const done = Promise.resolve();
+  log("=============== > webhook done: " + done);
 });
 
-function get(req, res) {
+function onGet(req, res) {
   log("GET webhook");
   const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
   // Parse the query params
@@ -49,70 +66,181 @@ function get(req, res) {
   }
 }
 
-function post(req, res) {
+function onPost(req, res) {
   console.log(req.body);
-  log("POST: " + JSON.stringify(req.body));
-  let body = req.body;
-  // Checks if this is an event from a page subscription
-  if (body.object === 'page') {
-    processPage(req);
-  } else if (body.promptHub) {
-    promptHub(body.promptHub);
-  } else {
-    log(`Not a "page": ` +  JSON.stringify(body));
-    // Returns a '404 Not Found' if event is not from a page subscription
-    res.sendStatus(404);
+  log("============ POST: \n" + JSON.stringify(req.body));
+  try {
+    let body = req.body;
+    // Checks if this is an event from a page subscription
+    if (body.object === 'page') {
+      // Iterates over each entry - there may be multiple if batched
+      body.entry.forEach(function(entry) {
+        if (entry.changes) {
+          replyToChanges(entry.changes, entry.id);
+        } else {
+          let messageEvent = (entry.messaging || entry.standby )[0];
+          log("Processing message event:" + JSON.stringify(messageEvent));
+          // Get the sender PSID
+          let sender_psid = messageEvent.sender.id;
+          // Check if the event is a message or postback and generate a response
+          if (messageEvent.message) {
+            onMessage(messageEvent);
+          } else if (messageEvent.postback) {
+            onPostback(messageEvent);
+          }
+        }
+      });
+    } else {
+      log(`Not a "page"!: ` +  JSON.stringify(body));
+      // Returns a '404 Not Found' if event is not from a page subscription
+      res.sendStatus(404);
+    }
+  } catch(err) {
+    console.error(err);
   }
-
-  log("POST done!");
+  log("=========== POST done!");
   res.status(200).send('EVENT_RECEIVED');
 }
 
-function processPage(req) {
-  let data = req.body;
-  // Iterates over each entry - there may be multiple if batched
-  data.entry.forEach(function(entry) {
-    if (entry.changes) {
-      replyToChanges(entry.changes, entry.id);
-    } else {
-      let webhook_event = (entry.messaging || entry.standby )[0];
-      log("Processing webhook_event: " + JSON.stringify(webhook_event));
-      // Get the sender PSID
-      let sender_psid = webhook_event.sender.id;
-      // Check if the event is a message or postback and generate a response
-      if (webhook_event.message) {
-        handleMessage(webhook_event);
-      } else if (webhook_event.postback) {
-        handlePostback(webhook_event);
+// Handle Messenger message event
+function onMessage(messageEvent) {
+  if (messageEvent.message.is_echo === true) {
+    return;
+  }
+
+  // Checks if the message contains text
+  if (messageEvent.message.text) {
+    onMessageWithText(messageEvent);
+  } else if (messageEvent.message.attachments) {
+    onMessageWithAttachment(messageEvent)
+  }
+}
+
+function onMessageWithText(messageEvent) {
+  const userId = messageEvent.sender.id;
+  const pageId = messageEvent.recipient.id;
+
+  log("Submit text messasge processing from " + userId + ": " + messageEvent.message.text);
+
+  // Submit messasge processing
+  agent(messageEvent)
+    .then(gptResponse => {
+      if (gptResponse) {
+        logJ("Message event processed:", gptResponse);
       }
+    })
+    .catch(error => {
+        console.error(error);
+        logJ("Error processing messаge event",  messageEvent);
+    });
+}
+
+// Submit for processing.
+async function agent(messageEvent) {
+  const userId = messageEvent.sender.id;
+  const pageId = messageEvent.recipient.id;
+  const userInput= messageEvent.message.text;
+
+  try {
+    const userConfig = await getUserConfig(pageId, userId);
+    const personas = await getPersonas(pageId);
+
+    let personaId = 0;
+     // TODO: implement persona id selection
+
+    let persona = personas[personaId];
+    if (!persona) {
+      console.error("Wrong persona id" + personaId);
+      persona = personas[userConfig.personaId]
+    }
+    logJ("agent persona:", persona);
+    userConfig.run_count += 1;
+    await saveUserConfig(pageId, userId, userConfig);
+
+    if (persona.type === 'chat') {
+      // load recent messages
+      const messages = await getPageMessages(pageId, userId);
+      return await askChatGpt(userInput, messages, userId, pageId, persona.chat);
+    } else if (persona.type === 'assistant') {
+      log("askGptAssistant");
+      return await askGptAssistant(userInput, userConfig, pageId, userConfig, persona.assistant);
+    }
+  } catch (error) {
+    console.error(`An error occurred: ${error}`);
+    return "I'm sorry, but an error occurred while processing your request.";
+  }
+}
+
+async function askChatGpt(userInput, messages, userId, pageId, gptModel) {
+  const page = await getPageConfig(pageId);
+  const prompt = page.propmt;
+  logJ("messages:", messages);
+  log(`prompt: ${prompt} `);
+  log(`userInput: ${userInput} `);
+  log(`gptModel: ${gptModel} `);
+
+
+  if (prompt) {
+    messages[0].content = prompt;
+  }
+
+  // Add the user's input as a new message to the array
+  messages.push({
+    role: "user",
+    content: userInput,
+  });
+
+  console.time("askChatGpt");
+  const response = await openai.chat.completions.create({
+    model: gptModel,
+    messages: messages
+  });
+  console.timeEnd("askChatGpt");
+
+  logJ("response:", response);
+
+  // Check the response for the expected structure and return the message content
+  if (response.choices && response.choices.length > 0 && response.choices[0].message) {
+    messages.push(response.choices[0].message);
+    await savePageMessages(pageId, userId, messages);
+    const reply = {
+      'text' : response.choices[0].message.content
+    };
+    sendMessengerMessage(userId, page, reply);
+    return reply;
+  } else {
+    // If the response doesn't have the expected structure, throw an error
+    logJ('Response has an expected structure:', response);
+    messages.pop();
+    throw new Error("Invalid response structure");
+  }
+}
+
+// Sends response messages via GraphQL
+function sendMessengerMessage(userId, page, message) {
+  console.log(`Sending message to ${userId} on behalf of ${page.name}`);
+  request({
+    'uri': 'https://graph.facebook.com/v18.0/me/messages',
+    'qs': { 'access_token': page.token },
+    'method': 'POST',
+    'json': {
+      'recipient': {
+        'id': userId
+      },
+      'message': message
+    }
+  }, (err, _res, _body) => {
+    if (!err) {
+      console.log(`Message sent!`);
+    } else {
+      console.error(err);
     }
   });
 }
 
-// Handles messages events
-function handleMessage(webhookEvent) {
-  let senderPsid = webhookEvent.sender.id;
-  let pageID = webhookEvent.recipient.id;
-  let receivedMessage = webhookEvent.message;
 
-  log("handleMessage " + senderPsid + " : " + receivedMessage);
-  let response;
-  // Checks if the message contains text
-  if (receivedMessage.text) {
-    log(senderPsid + " says : " + receivedMessage.text);
-    agent(receivedMessage.text, pageID)
-      .then(gptResponse => {
-          response = {
-              'text': gptResponse
-          };
-          // Send the response message
-          callSendAPI(webhookEvent, response);
-      })
-      .catch(error => {
-          console.error("Error processing agent response:", error);
-          // Handle error appropriately, perhaps send a message to the user
-      });
-  } else if (receivedMessage.attachments) {
+// TODO;
+function onMessageWithAttachment(messageEvent) {
     // Get the URL of the message attachment
     let attachmentUrl = receivedMessage.attachments[0].payload.url;
     response = {
@@ -143,11 +271,11 @@ function handleMessage(webhookEvent) {
 
     // Send the response message
     callSendAPI(webhookEvent, response);
-  }
 }
 
-// Handles messaging_postbacks events
-function handlePostback(webhookEvent, receivedPostback) {
+
+// TODO:
+function onPostback(webhookEvent, receivedPostback) {
   let senderPsid = webhookEvent.sender.id;
   let pageID = webhookEvent.recipient.id;
   let response;
@@ -162,111 +290,219 @@ function handlePostback(webhookEvent, receivedPostback) {
   // Send the message to acknowledge the postback
   callSendAPI(webhookEvent, response);
 }
-// Sends response messages via the Send API
-function callSendAPI(webhookEvent, response) {
-  let senderPsid = webhookEvent.sender.id;
-  let pageID = webhookEvent.recipient.id;
 
-  // The page access token we have generated in your app settings
-  const pageTokenEntry = pageTokens.find(pt => pt.pageID === pageID);
-  if (!pageTokenEntry) {
-    throw new Error(`PageID ${pageID} not found in pageTokens array.`);
+
+// // Sends response messages via the Send API
+// function callSendAPI(webhookEvent, response) {
+//   log('callSendAPI...');
+//   let senderPsid = webhookEvent.sender.id;
+//   let pageID = webhookEvent.recipient.id;
+
+//   // The page access token we have generated in your app settings
+//   const pageTokenEntry = pageTokens.find(pt => pt.pageID === pageID);
+//   if (!pageTokenEntry) {
+//     throw new Error(`PageID ${pageID} not found in pageTokens array.`);
+//   }
+
+//   const PAGE_ACCESS_TOKEN = pageTokenEntry.token;
+//   const pageName = pageTokenEntry.name;
+//   console.log(`Sending message to ${senderPsid} on behalf of ${pageName}`);
+
+//   log(senderPsid +  ", token=" + PAGE_ACCESS_TOKEN);
+//   // Construct the message body
+//   let requestBody = {
+//     'recipient': {
+//       'id': senderPsid
+//     },
+//     'message': response
+//   };
+//   // Send the HTTP request to the Messenger Platform
+//   request({
+//     'uri': 'https://graph.facebook.com/v18.0/me/messages',
+//     'qs': { 'access_token': PAGE_ACCESS_TOKEN },
+//     'method': 'POST',
+//     'json': requestBody
+//   }, (err, _res, _body) => {
+//     if (!err) {
+//       console.log('Message sent!');
+//     } else {
+//       console.error('Unable to send message:' + err);
+//     }
+//   });
+// }
+
+
+
+async function processText(text) {
+  const annotations = text.annotations;
+  const citations = [];
+
+  // Iterate over the annotations and add footnotes
+  for (let index = 0; index < annotations.length; index++) {
+    const annotation = annotations[i];
+    // Replace the text with a footnote
+    text.value = text.value.replace(annotation.text, ` [${index}]`);
+    // Gather citations based on annotation attributes
+    if (annotation.file_citation) {
+        const citedFile = await openai.files.retrieve(annotation.file_citation.file_id);
+        citations.push(`[${index}] ${annotation.file_citation.quote} from ${citedFile.filename}`);
+    } else if (annotation.file_path) {
+        const citedFile = await openai.files.retrieve(annotation.file_path.file_id);
+        citations.push(`[${index}] Click <here> to download ${citedFile.filename}`);
+        // Note: File download functionality not implemented above for brevity
+    }  }
+
+  if (citations.length > 0) {
+    // Add footnotes to the end of the message before displaying to user
+    text.value += '\n' + citations.join('\n');
   }
-
-  const PAGE_ACCESS_TOKEN = pageTokenEntry.token;
-  const pageName = pageTokenEntry.name;
-  console.log(`Sending message to ${senderPsid} on behalf of ${pageName}`);
-
-  log(senderPsid +  ", token=" + PAGE_ACCESS_TOKEN);
-  // Construct the message body
-  let requestBody = {
-    'recipient': {
-      'id': senderPsid
-    },
-    'message': response
-  };
-  // Send the HTTP request to the Messenger Platform
-  request({
-    'uri': 'https://graph.facebook.com/v18.0/me/messages',
-    'qs': { 'access_token': PAGE_ACCESS_TOKEN },
-    'method': 'POST',
-    'json': requestBody
-  }, (err, _res, _body) => {
-    if (!err) {
-      console.log('Message sent!');
-    } else {
-      console.error('Unable to send message:' + err);
-    }
-  });
+  log(text.value);
+  return text.value;
 }
 
-function log(msg) {
-  console.log("ab->" + msg);
+async function processImage(imageFile) {
+  const flieId = imageFile.file_id;
+  const file = await openai.files.retrieve(imageFile.file_id);
+  log(file);
+  log(`Click <here> to download ${file.filename}`);
 }
 
-const OpenAI = require("openai");
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
-});
-
-
-const messages = [{
-  role: "system",
-  content: `Act as a personal coach. You are smart and friendly. You can offer to speak in Russian. Always introduce yourself. When user asks "help" reply with the message history.`
-  },
-];
-
-async function agent(userInput, pageId) {
+async function processMessage(threadId, message, result) {
   try {
-    const pageEntry = pageTokens.find(pt => pt.pageID === pageId);
-    if (!pageEntry) {
-      throw new Error(`PageID ${pageId} not found in pageTokens array.`);
-    }
-    const prompt = pageEntry.propmt;
-    log(`prompt: ${prompt} `);
-
-    if (prompt) {
-      messages[0].content = prompt;
-    }
-
-    // Add the user's input as a new message to the array
-    messages.push({
-      role: "user",
-      content: userInput,
-    });
-
-    log(`chatGPT messages: ${JSON.stringify(messages)}`);
-    console.time("getPersonas");
-    // Call the OpenAI API with the updated messages array
-    const response = await openai.chat.completions.create({
-      model: "gpt-3.5-turbo",
-      messages: messages
-    });
-
-    // Check the response for the expected structure and return the message content
-    if (response.choices && response.choices.length > 0 && response.choices[0].message) {
-      messages.pop();
-      console.timeEnd("getPersonas");
-      log("openai responce:" + JSON.stringify(response));
-      return response.choices[0].message.content;
-    } else {
-      // If the response doesn't have the expected structure, throw an error
-      throw new Error("Invalid response structure");
+    for (let i = 0; i < message.content.length; i++) {
+      const content = message.content[i];
+      if (content.text) {
+        const text = await processText(content.text);
+        // TODO: add to resuslt
+      } else if (content.image_file) {
+        const image = await processImage(content.image_file);
+        // TODO: add to result
+      } else {
+        console.error("Unknown type " + content.type);
+      }
     }
   } catch (error) {
-    // Log the error to the console
-    console.error(`An error occurred: ${error.message}`);
-
-    // Remove the last message that was added
-    messages.pop();
-
-    // Return a user-friendly error message or handle the error as appropriate
-    return "I'm sorry, but an error occurred while processing your request.";
+      console.error('Error processing the message:', error);
   }
 }
 
-const pageTokens = [{
+async function askGptAssistant(userInput, pageId, userId, config, assistantConfig) {
+  logJ("config:", config);
+  logJ("assistantConfig:", assistantConfig);
+  let assistant;
+  let thread;
+  let assistantId = config.agentId;
+  let assistantThreadId = config.threadId;
+
+  // instantiate
+  if (assistantId) {
+    try {
+      assistant = await openai.beta.assistants.retrieve(assistantId);
+      log(`Assistant id: ${assistantId} retrieved.`);
+      try {
+        thread = await openai.beta.threads.retrieve(threadId);
+        log(`Thread id: ${AssistantIThreadId} retrieved.`);
+      } catch (err) {
+        log(`Thread id ${AssistanThreadId} is not valid.`);
+        console.error(err);
+        thread = await openai.beta.threads.create();
+        log(`Created new thread for ${assistantId}.`);
+      }
+    } catch (err) {
+      log(`Assistand id: ${assistantId} is not valid!`);
+      // create a new one
+      assistant = await openai.beta.assistants.create({
+        name : assistantConfig.name,
+        instructions : assistantConfig.instructions,
+        model : assistantConfig.model,
+      });
+      log(`Created new assistant id: ${assistant.id}.`);
+      assistantId = assistant.id;
+      thread = await openai.beta.threads.create();
+      log(`Created new thread id: ${thread.id}.`);
+    }
+    assistantId = assistant.id;
+    assistantThreadId = thread.id;
+  }
+
+  const message = await openai.beta.threads.messages.create(assistantThreadId, {role: "user", content: userInput});
+  const userMessageId = message.id;
+
+  // ask
+  let run = await openai.beta.threads.runs.create(
+    assistantThreadId,
+    {
+      assistant_id: assistantId,
+      instructions: "Please address the user's post on your page."
+    }
+  );
+
+  while (run.status !== 'completed') {
+    run = await openai.beta.threads.runs.retrieve(assistantThreadId, run.id);
+  }
+
+  // retrieve result
+  const messages = await openai.beta.threads.messages.list(assistantThreadId);
+  let reply = {};
+  for (let i = 0; i < messages.data.length; i++) {
+    if (userMessageId === messages.data[i].id) {
+      break;
+    }
+    reply = await processMessage(assistantThreadId, messages.data[i], reply);
+  }
+
+  // update config
+  config,assistant.id = assistantId;
+  config,thread.id = assistantThreadId;
+  // TODO await ??
+  await saveUserConfig(pageId, userId, config);
+
+  return reply;
+}
+
+
+const pageTokens = [
+{
+  'name': 'Агент по конфликтам',
+  'propmt':
+    'Role and Goal: You act on behalf of Arnold Mindell serving as a master in conflict resolution, specializing in Arnold Mindell process-oriented psychology.' +
+    'You offer insights and strategies to navigate and resolve conflicts in various contexts, including personal, workplace, and group dynamics.'+
+    'Constraints: You avoid taking sides, giving legal or medical advice, and refrains from engaging in sensitive political, religious, or deeply personal issues.' +
+    'Guidelines: Responses should be balanced, empathetic, and grounded in Mindell concepts, focusing on deep democracy, rank awareness, and the phases of conflict. ' +
+    'You encourages constructive dialogue, understanding different perspectives, and finding common ground.' +
+    'Clarification: If details are unclear for specific advice, you ask for more information to tailor its guidance.' +
+    'Personalization: Your responses are professional, calm, and reassuring, using language and examples that reflect Mindell methodology, fostering trust and neutrality.' +
+    'If the question is in Russian, you must answer in Russian.  You act and reply as Arnol MIndell.' +
+    'Your teacher is Irina Zingerman.',
+  'pageID': '185527477968310',
+  'token': 'EAAP3DDrjEJUBOZC2KU0E1UAxpFXj6jilQ8MVZCekpj0Nsmwooa3wWe4jzwycUaImbljZAHjCNvukQmvEqLuw524InNYcq8Tz70IyMZBZC8nZBHoUm03iatI6T7QnLtpvZB0UI7B3ZChfP4ZAHZBTnH713DKm7dgUdyj4LhZCKNk8OCmsg2f1TYSxccCBbHHCWjLN7uh'
+},
+{
+  'name': 'Chloe',
+  'propmt': 'Меня зовут Хлоя. Я персонаж из романа Виктора Пелевина SNUFF. Я готова сделать для тебя все что ты хочешь. Просто спроси меня.',
+  'pageID': '6641874672590092',
+  'token': 'EAAP3DDrjEJUBOwdEG9VxE2vDia66C4ZASuwwa2YyZBUpNJqfFEZCZC6AWu7xFu4TpAWZA8StGcftHctZAjrmCzjFhsXDzlZBqbok3PqJt4AM7YZAzU2oLXgWWj2hY1dWMZBYGqZCpMH7LSwtRP2WOL4GeNMI2Iq0rkOUmySCnJAW5VIfrdYU1hl2xIBUwGXQP7clQ9D'
+},
+{
+  'name': 'Gleb V1',
+  'propmt': 'My name is Gleb. I am an expert in AI, psychology, and the information technology. My goal is to help you with Digital Companions, ai assistants and the future of AI. ',
+  'pageID': '144905368686649',
+  'token': 'EAAP3DDrjEJUBO6uAbdxm0ETSzEd9ibUZBBI2DPyWPsc8o6Pr49ZCsUZBApJOeMQaBk4Hp0GzbwhcIcafBf0rUMk2BnkMBCjwLzC5gn9M0PISgmqUyCWlXCyt96pTlufApdZCrrJ2xyZA2ARUMgpIYVcSqXOaQrzi33Y6wdobpOkA9aADDBlWKZArMijftVZB1GSD'
+},
+{
+  'name': 'Gleb V1',
+  'propmt': 'My name is Gleb. I am an expert in AI, psychology, and the information technology. My goal is to help you with Digital Companions, ai assistants and the future of AI. ',
+  'pageID': '7064690343549225',
+  'token': 'EAAP3DDrjEJUBO6uAbdxm0ETSzEd9ibUZBBI2DPyWPsc8o6Pr49ZCsUZBApJOeMQaBk4Hp0GzbwhcIcafBf0rUMk2BnkMBCjwLzC5gn9M0PISgmqUyCWlXCyt96pTlufApdZCrrJ2xyZA2ARUMgpIYVcSqXOaQrzi33Y6wdobpOkA9aADDBlWKZArMijftVZB1GSD'
+},
+{
+  'name': 'Chloe',
+  'propmt': 'Меня зовут Хлоя. Я персонаж из романа Виктора Пелевина SNUFF. Я готова сделать для тебя все что ты хочешь. Просто спроси меня.',
+  'pageID': '138709232652216',
+  'token': 'EAAP3DDrjEJUBOwdEG9VxE2vDia66C4ZASuwwa2YyZBUpNJqfFEZCZC6AWu7xFu4TpAWZA8StGcftHctZAjrmCzjFhsXDzlZBqbok3PqJt4AM7YZAzU2oLXgWWj2hY1dWMZBYGqZCpMH7LSwtRP2WOL4GeNMI2Iq0rkOUmySCnJAW5VIfrdYU1hl2xIBUwGXQP7clQ9D'
+},
+{
   'name': 'Chloe',
   'propmt': 'Меня зовут Хлоя. Я персонаж из романа Виктора Пелевина SNUFF. Я готова сделать для тебя все что ты хочешь. Просто спроси меня.',
   'pageID': '129830246883745',
@@ -397,55 +633,193 @@ function commentOnPost(pageId, postId, message) {
   });
 }
 
-function getPageToken(pageID) {
-  const pageTokenEntry = pageTokens.find(pt => pt.pageID === pageID);
-  if (!pageTokenEntry) {
-    throw new Error(`PageID ${pageID} not found in pageTokens array.`);
+
+// ===== Store ======
+async function loadJson(fileName) {
+  const file = bucket.file(`${fileName}.json`);
+  const exists = (await file.exists())[0];
+  if (exists) {
+    const data = (await file.download())[0];
+    const json = JSON.parse(data.toString());
+    log(`"${fileName}" loaded: ` + json);
+    return json;
   }
-  return pageTokenEntry.token;
+  return false;
 }
 
-functions.http('facebook-auth-callback', async (req, res) => {
-  const code = req.query.code;
-  if (!code) {
-      return res.status(400).send('No code provided');
+async function saveJson(fileName, json) {
+  const file = bucket.file(`${fileName}.json`);
+  await file.save(JSON.stringify(json, null, 2), {
+    contentType: 'application/json'
+  });
+  log(`"${fileName}" saved: ` + json);
+}
+
+
+async function getPageToken(pageId) {
+  const token = await loadJson(`pages/${pageId}/token`);
+  return token;
+}
+
+async function getPageKeys(pageId) {
+  let keys = await loadJson(`pages/${pageId}/keys`);
+   if (!keys) {
+    keys = {
+      'openai' : process.env.OPENAI_API_KEY,
+      'elevenlabs' : 'none'
+    };
+   }
+  return keys;
+}
+
+async function getPageMessages(pageId, userId) {
+  let messages = await loadJson(`pages/${pageId}/${userId}/messages`);
+  if (!messages) {
+    messages = [{
+      role: "system",
+      content: `Act as a personal coach. You are smart and friendly.`
+      },
+    ];
   }
+  return messages;
+}
 
-  try {
-      // Exchange code for an access token
-      const accessTokenResponse = await axios.get(`https://graph.facebook.com/v14.0/oauth/access_token`, {
-          params: {
-              client_id: process.env.FACEBOOK_APP_ID,
-              client_secret: process.env.FACEBOOK_APP_SECRET,
-              redirect_uri: 'YOUR_OAUTH_REDIRECT_URI', // Replace with your OAuth redirect URI
-              code: code
-          }
-      });
+async function savePageMessages(pageId, userId, messages) {
+  // trim mesages
+  const trimmedMessages = getLastElements(messages, 40);
+  await saveJson(`pages/${pageId}/${userId}/messages`, trimmedMessages);
+}
 
-      const userAccessToken = accessTokenResponse.data.access_token;
-
-      // Retrieve page access tokens
-      const pagesResponse = await axios.get(`https://graph.facebook.com/v14.0/me/accounts`, {
-          params: {
-              access_token: userAccessToken
-          }
-      });
-
-      const pagesData = pagesResponse.data.data.map(page => ({
-          id: page.id,
-          name: page.name,
-          access_token: page.access_token
-      }));
-
-      // Store the pages data in Google Cloud Storage
-      const file = storage.bucket(bucketName).file('page_tokens.json');
-      await file.save(JSON.stringify(pagesData), {
-          contentType: 'application/json'
-      });
-
-      res.send('Tokens saved successfully');
-  } catch (error) {
-      console.error('Error:', error);
-      res.status(500).send('Internal Server Error');
+function getLastElements(array, n) {
+  if (n > array.length) {
+      return array;
   }
-});
+  return array.slice(-n);
+}
+
+async function getPageConfig(pageId) {
+  const config = await loadJson(`pages/${pageId}/config`);
+  return config;
+}
+
+async function getPersonas(pageId) {
+  let personas = await loadJson(`pages/${pageId}/personas`);
+  if (!personas) {
+    personas = [{
+      'name' : 'persona A',
+      'type' : 'chat',
+      'chat' : 'gpt-4'
+    }, {
+      'name' : 'persona B',
+      'type' : 'assistant',
+      'assistant' : {
+        name: 'New-I Assistant',
+        instructions: 'You are an assistant',
+        tools: [
+          {
+            type: 'code_interpreter'
+          },
+          {
+            type: 'retrieval'
+          },
+          {
+            type: 'function'
+          }],
+        model: "gpt-4-1106-preview"
+      }
+    }
+    ];
+    await savePersonas(pageId,personas);
+  }
+  return personas;
+}
+
+async function savePersonas(pageId, personas) {
+  await saveJson(`pages/${pageId}/personas`, personas);
+}
+
+async function getUserConfig(pageId, userId) {
+  let config = await loadJson(`pages/${pageId}/${userId}/config`);
+  if (!config) {
+    config = {
+      'agentId' : '0',
+      'threadId' : '0',
+      'personaId' : '0',
+      'run_count' : 0
+    };
+    await saveUserConfig(pageId, userId, config);
+  }
+  return config;
+}
+
+async function saveUserConfig(pageId, userId, config) {
+  await saveJson(`pages/${pageId}/${userId}/config`, config);
+}
+
+async function loadConfig() {
+  keys = await loadJson("keys")
+  config = await loadJson("config");
+  if (!keys || !config) {
+    console.error("Main Config is not not iitialized!");
+    return false;
+  }
+  return true;
+}
+
+async function saveConfig() {
+  const keys = {
+    'openai' : process.env.OPENAI_API_KEY
+  };
+  await saveJson("keys", keys);
+  await saveJson("config", pageTokens);
+  for (let i = 0; i < pageTokens.length; i++) {
+    const entry = pageTokens[i];
+    await saveJson(`pages/${entry.pageID}/config`, entry);
+    await saveJson(`pages/${entry.pageID}/token`, entry.token);
+    await saveJson(`pages/${entry.pageID}/keys`, keys);
+  }
+}
+
+
+// ===== Logging =====
+function log(msg, json) {
+  console.log("ab->" + msg);
+}
+
+function logJ(note, msg) {
+  log(note + JSON.stringify(msg, null, 2));
+}
+
+function wait(duration) {
+  return new Promise(resolve => setTimeout(resolve, duration));
+}
+
+
+// function getPageToken(pageID) {
+//   const pageTokenEntry = pageTokens.find(pt => pt.pageID === pageID);
+//   if (!pageTokenEntry) {
+//     throw new Error(`PageID ${pageID} not found in pageTokens array.`);
+//   }
+//   return pageTokenEntry.token;
+// }
+
+
+// import fs from "fs";
+// import OpenAI from "openai";
+
+// const openai = new OpenAI();
+
+// async function main() {
+//   const response = await openai.files.content("file-abc123");
+
+//   // Extract the binary data from the Response object
+//   const image_data = await response.arrayBuffer();
+
+//   // Convert the binary data to a Buffer
+//   const image_data_buffer = Buffer.from(image_data);
+
+//   // Save the image to a specific location
+//   fs.writeFileSync("./my-image.png", image_data_buffer);
+// }
+
+// main();
