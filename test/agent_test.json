@@ -1,0 +1,225 @@
+
+# On Messenger Message
+curl localhost:8080 -X POST -H "Content-Type: application/json" -d '{"object":"page","entry":[{"id":"185527477968310","time":1700434571068,"messaging":[{"sender":{"id":"7210497548984257"},"recipient":{"id":"185527477968310"},"timestamp":1700434570424,"message":{"mid":"m_jWcGbTdJEIqWWqZrk8dOd3kkrk7P4bT1idX_IYDMi2JkgBHUxoDUMnwwuTYA6_eV6ZJVRqJtWUE9kn87Y9AM7A","text":"как зовут кота?","nlp":{"entities":{"sentiment":[{"confidence":0.59339547157288,"value":"neutral"}]},"detected_locales":[{"locale":"en_XX","confidence":0.8772}]}}}]}]}'
+
+# On Page Post Comment
+#   1.User comment notification verb = "add" comment_id = "XXXXX"  (PROCESS ALL ADD + COMMENT_ID,  IGNORE OURSELF)
+curl localhost:8080 -X POST -H "Content-Type: application/json" -d '{"entry":[{"id":"185527477968310","time":1700448951,"changes":[{"value":{"from":{"id":"7210497548984257","name":"Alexandre Barilov"},"post":{"status_type":"wall_post","is_published":true,"updated_time":"2023-11-20T02:55:49+0000","permalink_url":"https://www.facebook.com/ConflictAgent/posts/122102459360120481","promotion_status":"ineligible","id":"185527477968310_122102459360120481"},"message":"Мне тоже нужна помощь с конфликтами внутри.","post_id":"185527477968310_122102459360120481","comment_id":"122102459360120481_894903615592966","created_time":1700448949,"item":"comment","parent_id":"185527477968310_122102459360120481","verb":"add"},"field":"feed"}]}],"object":"page"}''
+#   2. Page Post user edit notification verb = "edit"  (IGNORE ALL EDIT)
+'{"entry":[{"id":"185527477968310","time":1700448951,"changes":[{"value":{"from":{"id":"7210497548984257","name":"Alexandre Barilov"},"message":"Нужна помощь по конфликтам на работе. Срочно!","post_id":"185527477968310_122102459360120481","created_time":1700448726,"item":"post","recipient_id":"185527477968310","verb":"edit"},"field":"feed"}]}],"object":"page"}'
+#   3. Our comment notification  verb = "add"
+#   4. Page Post our edit notification verb = "edit"
+
+
+# Process:
+{
+    "entry": [
+        {
+            "id": "185527477968310",
+            "time": 1700448951,
+            "changes": [
+                {
+                    "value": {
+                        "from": {
+                            "id": "7210497548984257",
+                            "name": "Alexandre Barilov"
+                        },
+                        "post": {
+                            "status_type": "wall_post",
+                            "is_published": true,
+                            "updated_time": "2023-11-20T02:55:49+0000",
+                            "permalink_url": "https://www.facebook.com/ConflictAgent/posts/122102459360120481",
+                            "promotion_status": "ineligible",
+                            "id": "185527477968310_122102459360120481"
+                        },
+                        "message": "Мне тоже нужна помощь с конфликтами внутри.",
+                        "post_id": "185527477968310_122102459360120481",
+                        "comment_id": "122102459360120481_894903615592966",
+                        "created_time": 1700448949,
+                        "item": "comment",
+                        "parent_id": "185527477968310_122102459360120481",
+                        "verb": "add"
+                    },
+                    "field": "feed"
+                }
+            ]
+        }
+    ],
+    "object": "page"
+}
+
+# Ignore
+{
+    "entry": [
+        {
+            "id": "185527477968310",
+            "time": 1700448951,
+            "changes": [
+                {
+                    "value": {
+                        "from": {
+                            "id": "7210497548984257",
+                            "name": "Alexandre Barilov"
+                        },
+                        "message": "Нужна помощь по конфликтам на работе. Срочно!",
+                        "post_id": "185527477968310_122102459360120481",
+                        "created_time": 1700448726,
+                        "item": "post",
+                        "recipient_id": "185527477968310",
+                        "verb": "edit"
+                    },
+                    "field": "feed"
+                }
+            ]
+        }
+    ],
+    "object": "page"
+}
+
+{
+    "entry": [
+        {
+            "id": "185527477968310",
+            "time": 1700453626,
+            "changes": [
+                {
+                    "value": {
+                        "from": {
+                            "id": "8435113369850856",
+                            "name": "New-i Ai-host"
+                        },
+                        "message": "Подскажите, что делать в случае явной агресии.",
+                        "post_id": "185527477968310_122102500718120481",
+                        "created_time": 1700453625,
+                        "item": "post",
+                        "recipient_id": "185527477968310",
+                        "verb": "edit"
+                    },
+                    "field": "feed"
+                }
+            ]
+        }
+    ],
+    "object": "page"
+}
+
+# Attachment image
+{
+    "object": "page",
+    "entry": [
+        {
+            "id": "185527477968310",
+            "time": 1700457733504,
+            "messaging": [
+                {
+                    "sender": {
+                        "id": "7210497548984257"
+                    },
+                    "recipient": {
+                        "id": "185527477968310"
+                    },
+                    "timestamp": 1700457731795,
+                    "message": {
+                        "mid": "m_gdw7N3XizxeFVWIgaR8o53kkrk7P4bT1idX_IYDMi2LIUNz19e_HWFW_qbRc5EeWA1ETT0-G0BnqmHWUkxRI2Q",
+                        "attachments": [
+                            {
+                                "type": "image",
+                                "payload": {
+                                    "url": "https://scontent-ord5-1.xx.fbcdn.net/v/t1.15752-9/400177274_1660098144515236_5453670269889467810_n.jpg?_nc_cat=101&ccb=1-7&_nc_sid=b65b05&_nc_ohc=Xy7dlDjDCAEAX8Neaox&_nc_ad=z-m&_nc_cid=0&_nc_ht=scontent-ord5-1.xx&oh=03_AdRD99-GoOvaKFrqwhkf1dE0FUVRKQZUo8ZUaHTutQRIKw&oe=658251DE"
+                                }
+                            }
+                        ]
+                    }
+                }
+            ]
+        }
+    ]
+}
+
+
+# Link to video
+{
+    "object": "page",
+    "entry": [
+        {
+            "id": "185527477968310",
+            "time": 1700458215966,
+            "messaging": [
+                {
+                    "sender": {
+                        "id": "7210497548984257"
+                    },
+                    "recipient": {
+                        "id": "185527477968310"
+                    },
+                    "timestamp": 1700458214905,
+                    "message": {
+                        "mid": "m_1oTpnX9Li-pEih-zDTZz23kkrk7P4bT1idX_IYDMi2JY7gBuJz9be7UCfjmDiG-12i4IMtz_qqV3-zpk7jUugg",
+                        "text": "https://www.youtube.com/watch?v=XvIgEY0I-Xg&t=114s",
+                        "nlp": {
+                            "entities": {
+                                "sentiment": [
+                                    {
+                                        "confidence": 0.8486944437027,
+                                        "value": "neutral"
+                                    }
+                                ],
+                                "url": [
+                                    {
+                                        "confidence": 1,
+                                        "type": "value",
+                                        "value": "https://www.youtube.com/watch?v=XvIgEY0I-Xg&t=114s",
+                                        "domain": "youtube.com"
+                                    }
+                                ]
+                            },
+                            "detected_locales": []
+                        },
+                        "attachments": [
+                            {
+                                "type": "fallback",
+                                "payload": {
+                                    "url": "https://l.facebook.com/l.php?u=https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3DXvIgEY0I-Xg%26t%3D114s&h=AT1PQxfRGMdUjdAvLUN19ny1NVji4uwsCAfaJAXLnbOHZY63l-6nBBLFIdFepCoTc8Liqz0QuJ2LYd3nwUcGD-Hy21KNHNSf_709CElfNm9aP8tNFLBzweOGiwANGULvsalPJiannhqZfAM&s=1",
+                                    "title": "Assistants API explained completely A to Z step by step with code examples"
+                                }
+                            }
+                        ]
+                    }
+                }
+            ]
+        }
+    ]
+}
+
+#File
+{
+    "object": "page",
+    "entry": [
+        {
+            "id": "185527477968310",
+            "time": 1700458492724,
+            "messaging": [
+                {
+                    "sender": {
+                        "id": "7210497548984257"
+                    },
+                    "recipient": {
+                        "id": "185527477968310"
+                    },
+                    "timestamp": 1700458492170,
+                    "message": {
+                        "mid": "m_iBDcDFTGL5eYvXjeyL9IkXkkrk7P4bT1idX_IYDMi2L3h9adzr3QWiLOCOiOTfzdeeoZNrkPiiyacGCAd2zomw",
+                        "attachments": [
+                            {
+                                "type": "file",
+                                "payload": {
+                                    "url": "https://cdn.fbsbx.com/v/t59.2708-21/404469556_710392534488008_5100663971943889743_n.docx/NewI-Overview.docx?_nc_cat=108&ccb=1-7&_nc_sid=2b0e22&_nc_ohc=S8MiKo0LQYsAX9GoZJz&_nc_ht=cdn.fbsbx.com&oh=03_AdQHCjpar5aUNmQI6XYecwBJ_mD0EUs74foT-KE83S26Jw&oe=655CAD35"
+                                }
+                            }
+                        ]
+                    }
+                }
+            ]
+        }
+    ]
+}

@@ -214,87 +214,123 @@ async function processMessage(threadId, message) {
   }
 }
 
-async function askQuestion(question) {
-  return new Promise((resolve, reject) => {
-    readline.question(question, (answer) => {
-      resolve(answer);
-    });
-  });
-}
-
-const readline = require("readline").createInterface({
-  input: process.stdin,
-  output: process.stdout,
-});
-
 let APIcall = async (assistantId, threadId) => {
     const myAssistants = await openai.beta.assistants.list({
       order: "desc",
-      limit: "100",
+      limit: "20",
     });
+
+    log("My Assistants:")
     myAssistants.body.data.forEach(async (obj) => {
       log(`   name: ${obj.name} id: ${obj.id}`);
-      //await openai.beta.assistants.del(obj.id);
+      openai.beta.assistants.del(obj.id);
     });
-    log (`${assistantId}, ${threadId}`);
+
+    let assistant;
+    let myAssistant;
+    let thread;
+
+    if (assistantId === 'creator') {
+      assistant = await openai.beta.assistants.create({
+        name: "Assistent Creator",
+        instructions: "You are a gpt assistants creator. Your task is to ask for an assistant PURPOSE and suggest the following based on the PURPOSE:" +
+        " 1. Short name" +
+        " 2. Write prompt for assistant" +
+        " 3. Suggest a profile image and a background image",
+        tools: [{ type: "code_interpreter" }],
+        model: "gpt-4-1106-preview"
+      });
+
+      assistantId = assistant.id;
+      thread = await openai.beta.threads.create();
+      threadId = thread.id;
+    }
+
+    if (assistantId) {
+      try {
+        myAssistant = await openai.beta.assistants.retrieve(
+          assistantId
+        );
+      } catch (err) {
+        log(`Assistand id: ${assistantId} is not valid`);
+        return;
+      }
+    }
+
+    if (threadId) {
+      try {
+        thread = await openai.beta.threads.retrieve(
+          threadId
+        );
+      } catch (err) {
+        console.error(err);
+        thread = await openai.beta.threads.create();
+        threadId = thread.id;
+      }
+    }
+
+    // log(myAssistant);
+
  do {
-//  const userInput = readlineSync.question(`${threadId}-> `);
-  const userInput = await askQuestion(`${threadId} > `);
+  const userInput = readlineSync.question(`${threadId}-> `);
 
-  // Pass in the user question into the existing thread
-  await openai.beta.threads.messages.create(threadId, {
-    role: "user",
-    content: userInput,
-  });
+    let message;
+    try {
+      message = await openai.beta.threads.messages.create(
+        threadId,
+        {
+          role: "user",
+          content: userInput
+        }
+      );
+    } catch (err) {
+      console.error('err');
+      thread = await openai.beta.threads.create();
+      threadId = thread.id;
+      message = await openai.beta.threads.messages.create(
+        threadId,
+        {
+          role: "user",
+          content: userInput
+        }
+      );
+    }
 
-  // Use runs to wait for the assistant response and then retrieve it
-  const run = await openai.beta.threads.runs.create(threadId, {
-    assistant_id: assistantId,
-  });
+    let userMessageId = message.id;
+    log(`user: ${userMessageId}`);
 
-  let runStatus = await openai.beta.threads.runs.retrieve(
-    threadId,
-    run.id
-  );
+    let run = await openai.beta.threads.runs.create(
+      threadId,
+      {
+        assistant_id: assistantId,
+        instructions: "Please address the user's post on your page."
+      }
+    );
 
-  // Polling mechanism to see if runStatus is completed
-  // This should be made more robust.
-  while (runStatus.status !== "completed") {
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-    runStatus = await openai.beta.threads.runs.retrieve(threadId, run.id);
-  }
+    while (run.status !== 'completed') {
+      run = await openai.beta.threads.runs.retrieve(
+        threadId,
+        run.id
+      );
+//      log(`${run.id} : ${run.status}`);
+    }
 
-  // Get the last assistant message from the messages array
-  const messages = await openai.beta.threads.messages.list(threadId);
+    const messages = await openai.beta.threads.messages.list(
+      threadId
+    );
 
-  // Find the last message for the current run
-  const lastMessageForRun = messages.data
-    .filter(
-      (message) => message.run_id === run.id && message.role === "assistant"
-    )
-    .pop();
 
-  // If an assistant message is found, console.log() it
-  if (lastMessageForRun) {
-    console.log(JSON.stringify(lastMessageForRun));
-//    console.log(`${lastMessageForRun.content[0].text.value} \n`);
-  }
+    log(messages.data.length);
 
+    for (let i = 0; i < messages.data.length; i++) {
+      if (userMessageId === messages.data[i].id) {
+        break;
+      }
+      await processMessage(threadId, messages.data[i]);
+   }
  } while (true);
 };
-
-const instructions = "Ты эксперт по разрешению конфликтов, воплощая роль Арнольда Минделла."
-+ " Ты специализируешься на процессно-ориентированной психологии Арнольда Минделла и предназначен для предоставления стратегий "
-+ " и идей для разрешения конфликтов в различных ситуациях, включая личные, рабочие и групповые динамики. Перед тем как отвечать на вопросы,"
-+ " ты всегда ищешь информацию в загруженных файлах и предоставляет ссылки, если таковые найдены. Ограничения: Ты должен избегать принятия сторон в любом споре. "
-+ " Ты должен воздерживаться от предоставления юридических или медицинских советов.Ты не должен заниматься чувствительными политическими, "
-+ " религиозными или глубоко личными вопросами. Рекомендации:Твои ответы должны быть сбалансированными и эмпатичными. Твои советы должны быть основаны "
-+ " на концепциях Минделла, сосредотачиваясь на глубокой демократии, осознании ранга и фазах конфликта.Они должны способствовать конструктивному диалогу, пониманию различных точек зрения и поиску общего языка."
-+ " Протокол уточнения:Если предоставленные пользователями детали неясны или недостаточны для конкретных советов, ты должен запросить дополнительную информацию, чтобы предложить индивидуализированное руководство."
-+ " Персонализация:Твои ответы должны быть профессиональными, спокойными и уверенными. Язык и примеры, используемые в ответах, должны отражать методологию Минделла, создавая атмосферу доверия и нейтральности."
-+ " Требование к языку: Ты отвечаешь на языке пользователя. Если пользователь задает вопрос на английском языке, ты должен отвечать на английском. Ты всегда вежлив и всегда говоришь на вы.'";
-
 //modifyJsonFile('new-i', 'test');
-//APIcall("creator");
-APIcall("asst_4pwbinW8PLFFX4aY9ZeRML6X", "thread_cYv4skGLYI8FioiwyUSYQ23J"); // Bob
+APIcall("creator");
+//APIcall("g-XKEUT0nW1-agent-po-konfliktam", "thread_mOK7Yh8gPwqP0wm9ssY0z1ub-"); // Alex
 //APIcall("asst_j5TKz2i4OQavVIKr0K4Rfgjc", "thread_0D7IQSDIYhtyuX59HK3OYr5i"); // bob is a cat
