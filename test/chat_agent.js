@@ -4,6 +4,10 @@
 const readlineSync = require("readline-sync");
 require("dotenv").config();
 
+const OpenAI = require("openai");
+
+var openai;
+
 const { Storage } = require('@google-cloud/storage');
 const storage = new Storage();
 const bucketName = 'new-i'; // Replace with your bucket name
@@ -98,7 +102,7 @@ const pageTokens = [
 
     ]
   }
-
+// new-i test: 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
 async function modifyJsonFile(bucketName, fileName) {
     try {
         const bucket = storage.bucket(bucketName);
@@ -156,11 +160,6 @@ function log(msg) {
 //  console.log(JSON.stringify(msg, null, 2));
 }
 
-const OpenAI = require("openai");
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
-});
 
 async function processText(text) {
   const annotations = text.annotations;
@@ -227,21 +226,39 @@ const readline = require("readline").createInterface({
   output: process.stdout,
 });
 
+const k ='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' //process.env.OPENAI_API_KEY
 let APIcall = async (assistantId, threadId) => {
-    const myAssistants = await openai.beta.assistants.list({
-      order: "desc",
-      limit: "100",
-    });
-    myAssistants.body.data.forEach(async (obj) => {
-      log(`   name: ${obj.name} id: ${obj.id}`);
-      //await openai.beta.assistants.del(obj.id);
-    });
-    log (`${assistantId}, ${threadId}`);
- do {
-//  const userInput = readlineSync.question(`${threadId}-> `);
-  const userInput = await askQuestion(`${threadId} > `);
+  var myAssistants;
+  while(!myAssistants) {
+    var key = await askQuestion(`enter key > `);
+    if (key == '') {
+      key = k;
+    }
+    try {
+      openai = new OpenAI({
+        apiKey: key
+      });
+      myAssistants = await openai.beta.assistants.list({
+        order: "desc",
+        limit: "100",
+      });
+    } catch (err) {
+      log(`Invalid key: ${key}`);
+    }
+  }
 
-  // Pass in the user question into the existing thread
+  for (let i = 0; i < myAssistants.body.data.length; i++) {
+    const assistant = myAssistants.body.data[i];
+    log(i + ". " + JSON.stringify(assistant, null, 2));
+  }
+
+  do {
+    const userInput = await askQuestion(`${threadId} > `);
+    // Pass in the user question into the existing thread
+ } while (true);
+};
+
+async function askAssistant(assistantId, threadId, userInput) {
   await openai.beta.threads.messages.create(threadId, {
     role: "user",
     content: userInput,
@@ -276,12 +293,9 @@ let APIcall = async (assistantId, threadId) => {
 
   // If an assistant message is found, console.log() it
   if (lastMessageForRun) {
-    console.log(JSON.stringify(lastMessageForRun));
-//    console.log(`${lastMessageForRun.content[0].text.value} \n`);
+    console.log(JSON.stringify(lastMessageForRun.content));
   }
-
- } while (true);
-};
+}
 
 const instructions = "Ты эксперт по разрешению конфликтов, воплощая роль Арнольда Минделла."
 + " Ты специализируешься на процессно-ориентированной психологии Арнольда Минделла и предназначен для предоставления стратегий "

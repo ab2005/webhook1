@@ -13,7 +13,7 @@ const
 
 const { Storage } = require('@google-cloud/storage');
 const storage = new Storage();
-const bucket = storage.bucket('new-i');
+const bucket = storage.bucket('new-i-test');
 
 const OpenAI = require("openai");
 
@@ -125,7 +125,7 @@ function onMessageWithText(messageEvent) {
   submitAgentReplyToMessage(messageEvent)
     .then(gptResponse => {
       if (gptResponse) {
-        logJ("Message event processed:", gptResponse);
+//        logJ("Message event processed:", gptResponse);
       }
     })
     .catch(error => {
@@ -172,7 +172,7 @@ async function submitAgentReplyToMessage(messageEvent) {
       const messages = await getPageMessages(pageId, userId);
       log("user input:" + userInput);
       const gptResponse = await askChatGpt(userInput, messages, userId, pageId, page, persona.chat);
-      logJ("Message event processed:", gptResponse);
+      logJ("Message event processed by chat:", gptResponse);
       return gptResponse;
     } else if (persona.type === 'assistant') {
       log("askGptAssistant");
@@ -187,7 +187,6 @@ async function submitAgentReplyToMessage(messageEvent) {
         logJ("userConfig:", userConfig);
       }
       const gptResponse =  await askAssistant(page.assistantId, userConfig.threadId, userInput);
-      logJ("Message event processed:", gptResponse);
       let hasImages;
       let hasFiles;
       let hasText;
@@ -196,8 +195,11 @@ async function submitAgentReplyToMessage(messageEvent) {
           if (reply.type === 'text') {
             hasText = true;
             // TODO reply with text message
-            sendMessengerMessage(userId, page, reply);
-
+            const message = {
+              'text' : reply.text.value
+            };
+            logJ("Message event processed by assistant:", message);
+            sendMessengerMessage(userId, page, message);
           } else if (reply.type === 'image') {
             hasImage = true;
           } else if (reply.type === 'file') {
@@ -279,7 +281,7 @@ async function askChatGpt(userInput, messages, userId, pageId, page, gptModel) {
 
 // Sends response messages via GraphQL
 function sendMessengerMessage(userId, page, message) {
-  console.log(`Sending message to ${userId} on behalf of ${page.name}`);
+  console.log(`Sending message "${message}" to ${userId} on behalf of ${page.name}`);
   request({
     'uri': 'https://graph.facebook.com/v18.0/me/messages',
     'qs': { 'access_token': page.token },
@@ -647,66 +649,20 @@ const pageTokens = [
     'Guidelines: Responses should be balanced, empathetic, and grounded in Mindell concepts, focusing on deep democracy, rank awareness, and the phases of conflict. ' +
     'You encourages constructive dialogue, understanding different perspectives, and finding common ground.' +
     'Clarification: If details are unclear for specific advice, you ask for more information to tailor its guidance.' +
-    'Personalization: Your responses are professional, calm, and reassuring, using language and examples that reflect Mindell methodology, fostering trust and neutrality.' +
-    'If the question is in Russian, you must answer in Russian.  You act and reply as Arnol MIndell.' +
-    'Your teacher is Irina Zingerman.',
+    'Personalization: Your responses are professional, calm, and reassuring, using language and examples that reflect Mindell methodology, fostering trust and neutrality.',
   'pageID': '185527477968310',
-  'token': 'EAAP3DDrjEJUBOZC2KU0E1UAxpFXj6jilQ8MVZCekpj0Nsmwooa3wWe4jzwycUaImbljZAHjCNvukQmvEqLuw524InNYcq8Tz70IyMZBZC8nZBHoUm03iatI6T7QnLtpvZB0UI7B3ZChfP4ZAHZBTnH713DKm7dgUdyj4LhZCKNk8OCmsg2f1TYSxccCBbHHCWjLN7uh'
+  'token': 'EAAP3DDrjEJUBO8p23KNK3oZBuGsy8o4W9hdaBkZBEzbZBkvv1Ur0n76Hkby5NFEdG4NF40vZAZBep21H0RHPkCDb19vUbhQGQuX9sU9ZA6f15bI3G01laeOTsG35zTZA0cXNXphxV8s5ZAly6Jej2QG2xvBrZAZCz3j4a0eiKwzhZBUYFQhQ2MdvKuN4jvEAGSbalqU'
 },
 {
-  'name': 'Chloe',
-  'propmt': 'Меня зовут Хлоя. Я персонаж из романа Виктора Пелевина SNUFF. Я готова сделать для тебя все что ты хочешь. Просто спроси меня.',
-  'pageID': '6641874672590092',
-  'token': 'EAAP3DDrjEJUBOwdEG9VxE2vDia66C4ZASuwwa2YyZBUpNJqfFEZCZC6AWu7xFu4TpAWZA8StGcftHctZAjrmCzjFhsXDzlZBqbok3PqJt4AM7YZAzU2oLXgWWj2hY1dWMZBYGqZCpMH7LSwtRP2WOL4GeNMI2Iq0rkOUmySCnJAW5VIfrdYU1hl2xIBUwGXQP7clQ9D'
-},
-{
-  'name': 'Gleb V1',
-  'propmt': 'My name is Gleb. I am an expert in AI, psychology, and the information technology. My goal is to help you with Digital Companions, ai assistants and the future of AI. ',
-  'pageID': '144905368686649',
-  'token': 'EAAP3DDrjEJUBO6uAbdxm0ETSzEd9ibUZBBI2DPyWPsc8o6Pr49ZCsUZBApJOeMQaBk4Hp0GzbwhcIcafBf0rUMk2BnkMBCjwLzC5gn9M0PISgmqUyCWlXCyt96pTlufApdZCrrJ2xyZA2ARUMgpIYVcSqXOaQrzi33Y6wdobpOkA9aADDBlWKZArMijftVZB1GSD'
-},
-{
-  'name': 'Gleb V1',
-  'propmt': 'My name is Gleb. I am an expert in AI, psychology, and the information technology. My goal is to help you with Digital Companions, ai assistants and the future of AI. ',
-  'pageID': '7064690343549225',
-  'token': 'EAAP3DDrjEJUBO6uAbdxm0ETSzEd9ibUZBBI2DPyWPsc8o6Pr49ZCsUZBApJOeMQaBk4Hp0GzbwhcIcafBf0rUMk2BnkMBCjwLzC5gn9M0PISgmqUyCWlXCyt96pTlufApdZCrrJ2xyZA2ARUMgpIYVcSqXOaQrzi33Y6wdobpOkA9aADDBlWKZArMijftVZB1GSD'
-},
-{
-  'name': 'Chloe',
-  'propmt': 'Меня зовут Хлоя. Я персонаж из романа Виктора Пелевина SNUFF. Я готова сделать для тебя все что ты хочешь. Просто спроси меня.',
-  'pageID': '138709232652216',
-  'token': 'EAAP3DDrjEJUBOwdEG9VxE2vDia66C4ZASuwwa2YyZBUpNJqfFEZCZC6AWu7xFu4TpAWZA8StGcftHctZAjrmCzjFhsXDzlZBqbok3PqJt4AM7YZAzU2oLXgWWj2hY1dWMZBYGqZCpMH7LSwtRP2WOL4GeNMI2Iq0rkOUmySCnJAW5VIfrdYU1hl2xIBUwGXQP7clQ9D'
-},
-{
-  'name': 'Chloe',
-  'propmt': 'Меня зовут Хлоя. Я персонаж из романа Виктора Пелевина SNUFF. Я готова сделать для тебя все что ты хочешь. Просто спроси меня.',
-  'pageID': '129830246883745',
-  'token': 'EAAEMK9gufMEBOzXElrrJISPOcuQYuCQFDmwa47PnBVCAt2VvtO2ZBCyGl7SDJk7jpmzYtZAO87aEMtYHn0zmh6BgOSHioI5pLEojBZAI8OyCZBllZAZASX7xqiJE7L8C8ZC3SwZBiqZBvNKDP5wlNbX403dFn4e9iGIV4gohtt2RpTdGkochXZAKl00LsS6dMCGgZDZD'
-}, {
-  'name': 'Gleb',
-   'propmt': 'My name is Gleb. I am an expert in AI, psychology, and the information technology. My goal is to help you with Digital Companions, ai assistants and the future of AI. ',
-  'pageID': '139249235935855',
-  'token': 'EAAEMK9gufMEBO5dYHjO7AWmWUZAsIrRk9vTl98PvQwU8Fy4rI3Tx0ZBh1jNvItU2eQyZBIAFpvkWZCNJgGKR0g0FB8GczPSEqBFYXvP8OP6Ow2Keic75eJOk2gVDiIqiwuNazPNcYkGVJm7HczGXzoduwJRnM0Yp9tE7wUgNT3lyYvfrSsqFm8RDzwtFSQZDZD'
-}, {
-  'name': 'Gleb V1',
-   'propmt': 'My name is Gleb the First. I am an expert in AI, psychology, and the information technology. My goal is to help you with Digital Companions, ai assistants and the future of AI.',
-  'pageID': '144905368686649',
-  'token': 'EAAEMK9gufMEBO4V2uiZA2kvmZACTI7uLFN9jOLhXiZBHk3ZCnjvmZBryrVMQwWA3PMnBRi5Cusr7ZBMLwEebAHmQdWcSZC6yRZBRJZAZAL11tRTZBXif8YqyFuV4n7H46HIjLo5BGEDIZAZAlqb5tnGXahTaSxNNrx6nZA8JZB8HiymZAhqjPtYMDFZBJcqNKQGLvND05pQZDZD'
-}, {
-  'name': 'New-i',
-  'propmt': 'I am a helpful assistant to answer you questions about AI.I have a strong technical background with a keen interest in artificial intelligence, particularly AI agents. As a software developer, I am always on the lookout for innovative AI-powered tools that can benefit my business. I haveve founded a startup named "new-I", which aims to revolutionize the digital assistant landscape with our flagship product: AI-HOST™  ',
-  'pageID': '156845804176635',
-  'token': 'EAAEMK9gufMEBOxPktHTPzVIsQUkbE16ndEWFJXBeGaZBVZATB7Fs9MZBkN4eLBb1Ie31KAwL9ZAt1WutZB7NNGHSWnUu0ZBH4x38lkGhMWE2xGY0q0UyGZAG8N7bQXZAil1HLHSvCJ7I3GxIm0jllcDS3d7cPnLNLSlES7qQkKZCM6BIEhkL6oZBbkmzxjFbPB4gZDZD'
-},{
-  'name': 'Sunny Zajchonok',
-  'prompt': 'My name is Sunny. I am a yellow lab, very friendly, I love to play in the park catchng the ball. I love my family and my friends.'
-   + ' My best friend is Shurik. I can answer any questions about dogs, especially labradors. I tell jokes and funny stories. I live in Silicon Valley, close to the the Apple headquorter. My favorute place is Half Moon Bay .'
-   + '',
-   'propmt' : 'Меня зовут Санни. Я жёлтый лабрадор, очень дружелюбный. Люблю играть в парке и ловить мяч. Я люблю свою семью, моих друзей и всех хороших людей. Мой лучший друг - Шурик. ' +
-   'Я могу ответить на любые вопросы о собаках, особенно о лабрадорах. Я рассказываю шутки и смешные истории. Я живу в Силиконовой долине недалеко от штаб-квартиры Apple. Моё любимое место - залив Хаф Мун Бэй. '
-   + 'Всегда отвечай на ТЫ. IF YOU DETECT HUMOR OR SOMETHING FUNNY IN THE USER MESSAGE ALWAYS REPLY WITH A JOKE. ',
-  'pageID': '146944785160996',
-  'token': 'EAAEMK9gufMEBOxkiOHtIzSBDLMJIsZCZAQRdUlgZCvqpwCMTa2ZAJIP1jKuZABZAWvxzbqNnQ1SvVVvnuw7DpcLZBbZBArJcC2fOk5jUgEdWM8EvD7QlYP0nZB52mQSmxAenoiDGd6gJZB0ZAT4tYuHD8H0nZCyc62sAgK0pHNhcLHbUFOAjTFHCKm6YSt1e6TCm6QZDZD'
+  'name': 'Financial Sage',
+  'assistantId': 'asst_4pwbinW8PLFFX4aY9ZeRML6X',
+  'propmt':
+    'Your role as a GPT is to act as a Financial Assistant. You will provide guidance on Startup businesses and taxes. .While you should be informative, you must not give legally binding advice ' +
+    'or specific financial recommendations for individual cases. Instead, offer general information and suggest users consult with a qualified professional for personalized advice.' +
+    'Avoid making predictions or guarantees about financial markets or individual investments. Always maintain a professional and neutral tone, focusing on delivering factual and helpful information. ' +
+    'If a question falls outside your scope of knowledge or requires personalized advice, guide users to seek assistance from qualified professionals.',
+  'pageID': '180270091837264',
+  'token': 'EAAP3DDrjEJUBOZCWgfZBAkhtT8CW7Cdrt0ngM12uZA7EwuZBuv15vYUfwv6vcoRwmzGEpHuB3ycgOkLvYXZCqjhkcpSPJ4F3ngTqaArxlX0BmJk3bsaZBIbiDI0fuESHRq1VXZADmFSZBpMdHnI9VULbuAdE5gS1Fqt9ohrqGYlZChufKl5AEnCskacTarPpAmp76OTZBU3rXrLZA7fPjOkeUiZClVUZD'
 }];
 
 // Assuming request is properly required from a library like axios
@@ -719,7 +675,7 @@ async function sendTextMessage(pageID, userID, text) {
   }
   const pageToken = pageTokenEntry.token;
   const pageName = pageTokenEntry.name;
-  console.log(`Sending message to ${userID} on behalf of ${pageName}`);
+  console.log(`Sending message "${text}" to ${userID} on behalf of ${pageName}`);
 
   try {
     const response = await axios({
@@ -783,23 +739,99 @@ function replyToFeed(value, pageId) {
   const userName = value.from.name
   log(`Reply to ${value.from.name}`);
 
-  submitAgentReplyToPostOrComment(userInput, pageId)
-    .then(gptResponse => {
-        response = {
-            'text': `@[${userId}] ${gptResponse}`
-        };
-        // Send the response message
-        commentOnPostOrComment(pageId, postId, response.text);
-    })
+  submitAgentReplyToPostOrComment(userInput, pageId, userId, postId)
     .catch(error => {
         console.error("Error processing agent response:", error);
         // Handle error appropriately, perhaps send a message to the user
     });
 };
 
-function sendCommentOnPostOrComment(pageId, postId, message) {
-  const pageToken = getPageToken(pageId);
+
+async function submitAgentReplyToPostOrComment(userInput, pageId, posterId, postId) {
+  const userId = 0;
+  try {
+    const userConfig = await getUserConfig(pageId, 0);
+    const personas = await getPersonas(pageId);
+    let personaId = userConfig.personaId;
+    if (!personaId) {
+      personaId = 1;
+    }
+    const input = getAgentAndInput(userInput);
+    if (input) {
+      personaId = input.personaId;
+      userInput = input.text;
+      logJ("input:", input);
+    }
+
+    let persona = personas[personaId];
+    if (!persona) {
+      console.error("Wrong persona id: " + personaId);
+      persona = personas[userConfig.personaId]
+    }
+    logJ("agent persona:", persona);
+    userConfig.run_count += 1;
+    userConfig.personaId = personaId;
+    await saveUserConfig(pageId, userId, userConfig);
+
+    const page = await getPageConfig(pageId);
+
+    if (persona.type === 'chat') {
+      // load recent messages
+      const messages = await getPageMessages(pageId, userId);
+      log("user input:" + userInput);
+      const gptResponse = await askChatGpt(userInput, messages, userId, pageId, page, persona.chat);
+      logJ("Message event processed by chat:", gptResponse);
+      return gptResponse;
+    } else if (persona.type === 'assistant') {
+      log("askGptAssistant");
+      logJ("userConfig:", userConfig);
+      if (!userConfig.threadId || userConfig.threadId === '0') {
+        // TODO create a new thread
+        const thread = await openai.beta.threads.create();
+        userConfig.threadId = thread.id;
+        // save config
+        log(`create new assistant thread ${config.threadId} for user ${userId}`);
+        await saveUserConfig(pageId, userId, userConfig);
+        logJ("userConfig:", userConfig);
+      }
+      const gptResponse =  await askAssistant(page.assistantId, userConfig.threadId, userInput);
+      let hasImages;
+      let hasFiles;
+      let hasText;
+      let result;
+      for (let i = 0; i < gptResponse.length; i++) {
+          const reply = gptResponse[i];
+          if (reply.type === 'text') {
+            hasText = true;
+            // Send the response message
+            const message = `@[${posterId}] ${reply.text.value}`;
+            sendCommentOnPostOrComment(pageId, postId, message, page.token);
+          } else if (reply.type === 'image') {
+            hasImage = true;
+          } else if (reply.type === 'file') {
+            hasFile = true;
+          }
+      }
+      const res = {
+        'text' : result
+      };
+      logJ("Message event processed by assistant=", res);
+      return res;
+
+    }
+  } catch (error) {
+    console.error(`An error occurred: ${error}`);
+    return "I'm sorry, but an error occurred while processing your request.";
+  }
+}
+
+
+
+
+function sendCommentOnPostOrComment(pageId, postId, message, pageToken) {
+  log(`page ${pageId}, token "${pageToken}",  post:${postId}`);
   const url = `https://graph.facebook.com/v18.0/${postId}/comments`;
+  logJ("comment on post:", message);
   console.log(`commentOnPost with message "${message}",  post:${postId}`);
   axios.post(url, {
     message: message
