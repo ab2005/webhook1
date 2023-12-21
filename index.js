@@ -13,13 +13,166 @@ const
 
 const { Storage } = require('@google-cloud/storage');
 const storage = new Storage();
-const bucket = storage.bucket('new-i-test');
+const bucket = storage.bucket('new-i');
 
 const OpenAI = require("openai");
 
-const openai = new OpenAI({
+var openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
+
+// ===== Telegram =====
+const { Telegraf } = require('telegraf');
+
+// ===== Facebook login callback =====
+async function initFacebookUser(code) {
+  // Exchange code for short-lived token
+  const appId = "892971785510758";
+  const redirectUrl = 'https://us-west1-newi-1694530739098.cloudfunctions.net/webhook-2';
+  const appSecret = "c536677c20812c3077724dd57080906f";
+  const response = await axios.get('https://graph.facebook.com/v18.0/oauth/access_token', {
+    params: {
+      client_id: appId,
+      redirect_uri: redirectUrl,
+      client_secret: appSecret,
+      code: code,
+    }
+  });
+  logJ('Successfully got short--lived tokens:', response.data);
+  const shortToken = response.data.access_token;
+  const expires = response.data.expires_in;
+
+  // Exchange short-lived token for a long-lived token
+  const longTokenResponse = await axios.get('https://graph.facebook.com/v18.0/oauth/access_token', {
+      params: {
+        grant_type: 'fb_exchange_token',
+        client_id: appId,
+        client_secret: appSecret,
+        fb_exchange_token: shortToken,
+      }
+    });
+  logJ('Received long-lived token:', longTokenResponse.data);
+  const longLivedToken = longTokenResponse.data.access_token;
+
+  // Get the user ID
+  const userIdResponse = await axios.get('https://graph.facebook.com/v18.0/me', {
+    params: {
+      fields: 'id',
+      access_token: longLivedToken,
+    }
+  });
+  const userId = userIdResponse.data.id;
+  log('User ID:' + userId);
+
+  // Store user ID and access token
+  const config = {
+    'userId': userId,
+    'accessToken': longLivedToken,
+  };
+  await saveJson(`users/${userId}/config`, config);
+
+  // Store user pages tokens and names
+  const pagesResponse = await axios.get('https://graph.facebook.com/v18.0/me/accounts', {
+    params: {
+      access_token: longLivedToken,
+    }
+  });
+  const pages = pagesResponse.data.data;
+  for (let i = 0; i < pages.length; i++) {
+    const page = pages[i];
+    console.log('Page ID:', page.id);
+    console.log('Page Name:', page.name);
+    console.log('Page Access Token:', page.access_token);
+    const pageConfig = {
+      'pageID': page.id,
+      'name' : page.name,
+      'token': page.access_token,
+    };
+    log(`Saving page pages/${page.id}/config...`);
+    await saveJson(`pages/${page.id}/config`, pageConfig);
+
+    // Subscribe
+    const subscriptions = 'email,feed,group_feed,inbox_labels,mention,message_reactions,messages,';
+    log("url:" + `https://graph.facebook.com/v18.0/${page.id}/subscribed_apps`);
+    log("subscriptions:" + subscriptions);
+    const subscribedResponse = await axios.post(`https://graph.facebook.com/v18.0/${page.id}/subscribed_apps`, null, {
+      params: {
+        subscribed_fields: subscriptions,
+        access_token: page.access_token,
+      }
+    });
+    const subscriptionReply = JSON.stringify(subscribedResponse.data);
+    log(`Subscribe responce: ${subscriptionReply}`);
+  }
+}
+
+async function onPostTelegram(req, res, assistantId, token) {
+  try {
+    log(`Processing telegram:` +  JSON.stringify(req.body));
+    const bot = new Telegraf(token);
+
+    bot.on('text', async (ctx) => {
+      const userInput = ctx.message.text;
+      // get openai key
+      if (!openai) {
+        console.error(`No key found for ${pageId}, try to get one...`);
+        try {
+          const ai = new OpenAI({
+            apiKey: userInput
+          });
+          myAssistants = await ai.beta.assistants.list({
+            order: "desc",
+            limit: "100",
+          });
+          for (let i = 0; i < myAssistants.body.data.length; i++) {
+            const assistant = myAssistants.body.data[i];
+            log(JSON.stringify(assistant));
+          }
+          openai = ai;
+        } catch (err) {
+          console.error(err);
+          log(`Invalid key: ${userInput}`);
+          ctx.reply(`Invalid key: ${userInput}`);
+          return;
+        }
+      }
+
+      const user = ctx.update.message.from;
+      const userName = user.username;
+      const botName = bot.botInfo.username;
+      const configName = `telegram/${botName}/${userName}/config.json`;
+      // get thread for bot + user
+      let config = await loadJson(configName);
+      if (!config) {
+        log("creating new config:" + configName);
+        const thread = await openai.beta.threads.create();
+        config = {
+          'threadId' : thread.id,
+        };
+        await saveJson(configName, config);
+      }
+
+      const thread = await openai.beta.threads.retrieve(config.threadId);
+
+      const gptResponse =  await askAssistant(assistantId, config.threadId, userInput);
+      for (let i = 0; i < gptResponse.length; i++) {
+        const response = gptResponse[i];
+        if (response.type === 'text') {
+          ctx.reply(response.text.value);
+        } else {
+          ctx.reply(JSON.stringify(response));
+        }
+      }
+    });
+
+    await bot.handleUpdate(req.body);
+    res.status(200).send('OK');
+  } catch (err) {
+    console.error(err);
+    // Returns a '404 Not Found' if event is not from a page subscription
+    res.sendStatus(404);
+  }
+}
 
 functions.http('webhook', async (req, res) => {
   try {
@@ -29,16 +182,40 @@ functions.http('webhook', async (req, res) => {
       await saveConfig();
     }
     if (req.method === 'GET') {
-      onGet(req, res);
-    } else if (req.method === 'POST') {
-      await onPost(req, res);
+      log('GET url:'+ req.url);
+      log('GET path:'+ req.path);
+      log('GET query:'+ JSON.stringify(req.query));
+      if (req.query.code) {
+        await initFacebookUser(req.query.code);
+        res.status(200).send('OK');
+        return;
+      } else {
+        onGet(req, res);
+      }
+  } else if (req.method === 'POST') {
+      log('POST url:'+ req.url);
+      log('POST path:'+ req.path);
+      log('POST path:'+ JSON.stringify(req.query));
+
+
+      if (req.query.t_a || req.query.t_t) {
+        await onPostTelegram(req, res, req.query.t_a, req.query.t_t);
+        return; // skip other handlers
+      }
+
+      if (req.body.object === 'page') {
+        await onPost(req, res);
+      } else {
+        log("Unsupported object: " + JSON.stringify(req.body));
+        res.status(400).send('Bad Request');
+      }
     }
   } catch (error) {
     log("An error occurred: " + error.message);
     res.status(500).send('Internal Server Error');
   }
   const done = Promise.resolve();
-  log("=============== > webhook done: " + done);
+  log("=============== > webhook done:" + done);
 });
 
 function onGet(req, res) {
@@ -75,12 +252,15 @@ function onPost(req, res) {
       // Iterates over each entry - there may be multiple if batched
       body.entry.forEach(function(entry) {
         if (entry.changes) {
-          replyToChanges(entry.changes, entry.id);
+          if (!openai) {
+            // TODO: ask for key
+            console.error("Key not found!");
+          } else {
+            replyToChanges(entry.changes, entry.id);
+          }
         } else {
           let messageEvent = (entry.messaging || entry.standby )[0];
-          log("Processing message event:" + JSON.stringify(messageEvent));
-          // Get the sender PSID
-          let sender_psid = messageEvent.sender.id;
+//          log("Processing message event:" + JSON.stringify(messageEvent));
           // Check if the event is a message or postback and generate a response
           if (messageEvent.message) {
             onMessage(messageEvent);
@@ -90,7 +270,7 @@ function onPost(req, res) {
         }
       });
     } else {
-      log(`Not a "page"!: ` +  JSON.stringify(body));
+      log(`Unknown object: ` +  JSON.stringify(body));
       // Returns a '404 Not Found' if event is not from a page subscription
       res.sendStatus(404);
     }
@@ -123,22 +303,26 @@ function onMessageWithText(messageEvent) {
 
   // Submit messasge processing
   submitAgentReplyToMessage(messageEvent)
-    .then(gptResponse => {
-      if (gptResponse) {
-//        logJ("Message event processed:", gptResponse);
-      }
-    })
     .catch(error => {
         console.error(error);
         logJ("Error processing messаge event",  messageEvent);
     });
 }
 
+/*
+onPost
+    onMessage
+        onMessageWithText
+            submitAgentReplyToMessage
+                askChatGpt
+                    sendMessengerMessage
+*/
 // Submit for processing reply for user message
 async function submitAgentReplyToMessage(messageEvent) {
   const userId = messageEvent.sender.id;
   const pageId = messageEvent.recipient.id;
   let userInput= messageEvent.message.text;
+
   log("user input:>>" + userInput);
 
   try {
@@ -166,6 +350,32 @@ async function submitAgentReplyToMessage(messageEvent) {
     await saveUserConfig(pageId, userId, userConfig);
 
     const page = await getPageConfig(pageId);
+
+    if (!openai) {
+      console.error(`No key found for ${pageId}, try to get one...`);
+      try {
+        const ai = new OpenAI({
+          apiKey: userInput
+        });
+        myAssistants = await ai.beta.assistants.list({
+          order: "desc",
+          limit: "100",
+        });
+        for (let i = 0; i < myAssistants.body.data.length; i++) {
+          const assistant = myAssistants.body.data[i];
+          log(JSON.stringify(assistant));
+        }
+        // TODO: save personas
+        page.key = userInput;
+        await savePageConfig(pageId, page);
+        openai = ai;
+      } catch (err) {
+        console.error(err);
+        log(`Invalid key: ${userInput}`);
+        sendMessengerMessage(userId, page, `Invalid key: ${userInput}`);
+        return;
+      }
+    }
 
     if (persona.type === 'chat') {
       // load recent messages
@@ -237,6 +447,7 @@ function getAgentAndInput(inputString) {
 async function askChatGpt(userInput, messages, userId, pageId, page, gptModel) {
   const prompt = page.propmt;
   logJ("messages:", messages);
+  logJ("page:", page);
   log(`prompt: ${prompt} `);
   log(`userInput: ${userInput} `);
   log(`gptModel: ${gptModel} `);
@@ -347,24 +558,12 @@ async function createAssistantWithThread(assistantId, assistantThreadId) {
   };
 }
 
-/*
-[
-  {
-    "type": "image_file",
-    "image_file": {
-        "file_id": "file-KS4apuawLXkZRYUrn4dYC7OK"
-    }
-  },
-  {
-    "type": "text",
-    "text": {
-        "value": "Вот ещё один рисунок кошки. Надеюсь, он соответствует тому, что вы хотели увидеть. Если у вас есть какие-либо другие просьбы или вопросы, пожалуйста, сообщите мне.",
-        "annotations": []
-    }
-  }
-]
-*/
+// Main function that user input
 async function askAssistant(assistantId, threadId, userInput) {
+  if (!assistantId) {
+    logJ("Error: Assistant ID is missing.");
+    return;
+  }
   await openai.beta.threads.messages.create(threadId, {
     role: "user",
     content: userInput,
@@ -525,7 +724,6 @@ function onMessageWithAttachment(messageEvent) {
         // Get the URL of the message attachment
         const attachmentUrl = attachment.payload.url;
         console.log("attachmentUrl:", attachmentUrl);
-
         if (attachment.type === 'audio') {
           // Fetch the attachment as a stream and create the transcription
           https.get(attachmentUrl, async (response) => {
@@ -597,51 +795,11 @@ function onPostback(webhookEvent, receivedPostback) {
   callSendAPI(webhookEvent, response);
 }
 
-
-// // Sends response messages via the Send API
-// function callSendAPI(webhookEvent, response) {
-//   log('callSendAPI...');
-//   let senderPsid = webhookEvent.sender.id;
-//   let pageID = webhookEvent.recipient.id;
-
-//   // The page access token we have generated in your app settings
-//   const pageTokenEntry = pageTokens.find(pt => pt.pageID === pageID);
-//   if (!pageTokenEntry) {
-//     throw new Error(`PageID ${pageID} not found in pageTokens array.`);
-//   }
-
-//   const PAGE_ACCESS_TOKEN = pageTokenEntry.token;
-//   const pageName = pageTokenEntry.name;
-//   console.log(`Sending message to ${senderPsid} on behalf of ${pageName}`);
-
-//   log(senderPsid +  ", token=" + PAGE_ACCESS_TOKEN);
-//   // Construct the message body
-//   let requestBody = {
-//     'recipient': {
-//       'id': senderPsid
-//     },
-//     'message': response
-//   };
-//   // Send the HTTP request to the Messenger Platform
-//   request({
-//     'uri': 'https://graph.facebook.com/v18.0/me/messages',
-//     'qs': { 'access_token': PAGE_ACCESS_TOKEN },
-//     'method': 'POST',
-//     'json': requestBody
-//   }, (err, _res, _body) => {
-//     if (!err) {
-//       console.log('Message sent!');
-//     } else {
-//       console.error('Unable to send message:' + err);
-//     }
-//   });
-// }
-
-
+//'asst_4pwbinW8PLFFX4aY9ZeRML6X',
 const pageTokens = [
 {
   'name': 'Агент по конфликтам',
-  'assistantId': 'asst_4pwbinW8PLFFX4aY9ZeRML6X',
+  'assistantId': 'asst_WnTIo4rw4dZWz5JGZm2yA23S',
   'propmt':
     'Role and Goal: Your name is "Агент по конфликтам". You act on behalf of Arnold Mindell serving as a master in conflict resolution, specializing in Arnold Mindell process-oriented psychology.' +
     'You offer insights and strategies to navigate and resolve conflicts in various contexts, including personal, workplace, and group dynamics.'+
@@ -654,8 +812,8 @@ const pageTokens = [
   'token': 'EAAP3DDrjEJUBO8p23KNK3oZBuGsy8o4W9hdaBkZBEzbZBkvv1Ur0n76Hkby5NFEdG4NF40vZAZBep21H0RHPkCDb19vUbhQGQuX9sU9ZA6f15bI3G01laeOTsG35zTZA0cXNXphxV8s5ZAly6Jej2QG2xvBrZAZCz3j4a0eiKwzhZBUYFQhQ2MdvKuN4jvEAGSbalqU'
 },
 {
-  'name': 'Financial Sage',
-  'assistantId': 'asst_4pwbinW8PLFFX4aY9ZeRML6X',
+  'name': 'FinancialSage',
+  'assistantId': 'asst_kDB6db8szlQBqeNYV1uMgewz',
   'propmt':
     'Your role as a GPT is to act as a Financial Assistant. You will provide guidance on Startup businesses and taxes. .While you should be informative, you must not give legally binding advice ' +
     'or specific financial recommendations for individual cases. Instead, offer general information and suggest users consult with a qualified professional for personalized advice.' +
@@ -706,23 +864,6 @@ function replyToChanges(changes, pageId) {
   });
 }
 
-
-/*
-"value":
-{
-  "from": {
-    "id": "7023896020990341",
-    "name": "Olena Lytynska"
-  },
-  "message": "asdasd",
-  "post_id": "185060918017731_122093263388133676",
-  "created_time": 1700547269,
-  "item": "post",
-  "recipient_id": "185060918017731",
-  "verb": "edit"
-},
-
-*/
 function replyToFeed(value, pageId) {
   console.log(`replyToFeed ${JSON.stringify(value)}`);
   // Do not answet to yourself
@@ -917,13 +1058,17 @@ async function getPageConfig(pageId) {
   return config;
 }
 
+async function savePageConfig(pageId, config) {
+  await saveJson(`pages/${pageId}/config`, config);
+}
+
 async function getPersonas(pageId) {
   let personas = await loadJson(`pages/${pageId}/personas`);
   if (!personas) {
     personas = [{
       'name' : 'persona A',
       'type' : 'chat',
-      'chat' : 'gpt-4'
+      'chat' : 'gpt-3.5-turbo-1106'
     }, {
       'name' : 'persona B',
       'type' : 'assistant',
@@ -1002,7 +1147,6 @@ function log(msg, json) {
 }
 
 function logJ(note, msg) {
-//  log(note + JSON.stringify(msg, null, 2));
   log(note + JSON.stringify(msg));
 }
 
@@ -1011,31 +1155,4 @@ function wait(duration) {
 }
 
 
-// function getPageToken(pageID) {
-//   const pageTokenEntry = pageTokens.find(pt => pt.pageID === pageID);
-//   if (!pageTokenEntry) {
-//     throw new Error(`PageID ${pageID} not found in pageTokens array.`);
-//   }
-//   return pageTokenEntry.token;
-// }
-
-
-// import fs from "fs";
-// import OpenAI from "openai";
-
-// const openai = new OpenAI();
-
-// async function main() {
-//   const response = await openai.files.content("file-abc123");
-
-//   // Extract the binary data from the Response object
-//   const image_data = await response.arrayBuffer();
-
-//   // Convert the binary data to a Buffer
-//   const image_data_buffer = Buffer.from(image_data);
-
-//   // Save the image to a specific location
-//   fs.writeFileSync("./my-image.png", image_data_buffer);
-// }
-
-// main();
+// curl -F "url=https://us-west1-newi-1694530739098.cloudfunctions.net/webhook-2/telegramBot" https://api.telegram.org/bot6360663950:AAHg6WmYMOVVdg37nqE6RCN6QhZddVZ8S_Q/setWebhook

@@ -1,10 +1,18 @@
 
 # On Messenger Message
-curl localhost:8080 -X POST -H "Content-Type: application/json" -d '{"object":"page","entry":[{"id":"185527477968310","time":1700434571068,"messaging":[{"sender":{"id":"7210497548984257"},"recipient":{"id":"185527477968310"},"timestamp":1700434570424,"message":{"mid":"m_jWcGbTdJEIqWWqZrk8dOd3kkrk7P4bT1idX_IYDMi2JkgBHUxoDUMnwwuTYA6_eV6ZJVRqJtWUE9kn87Y9AM7A","text":"как зовут кота?","nlp":{"entities":{"sentiment":[{"confidence":0.59339547157288,"value":"neutral"}]},"detected_locales":[{"locale":"en_XX","confidence":0.8772}]}}}]}]}'
+curl localhost:8080 -X POST -H "Content-Type: application/json" -d '
+{"object":"page","entry":[{"id":"185527477968310","time":1701735150230,"messaging":[{"sender":{"id":"6155922651174327"},"recipient":{"id":"185527477968310"},"timestamp":1701735149801,"message":{"mid":"m_57bfiBS5CBq2Yxabf5GPWq1QFV0eM2Fci093lzGRH4fUHZeWw0imU3jGYArhyk2l2UevZ-zqdkCr2iqui3xAsA","text":"test","nlp":{"entities":{"sentiment":[{"confidence":0.67772209644318,"value":"neutral"}]},"detected_locales":[{"locale":"en_XX","confidence":0.7602}]}}}]}]}
+'
 
+curl localhost:8080 -X POST -H "Content-Type: application/json" -d '
+{"object":"page","entry":[{"id":"185060918017731","time":1701803813512,"messaging":[{"sender":{"id":"7023896020990341"},"recipient":{"id":"185060918017731"},"timestamp":1701803813289,"message":{"mid":"m_2zqLlt6JtcoS07dLHcIPX2iDAl0jOlA1sXsaaOoMsT7B_HHjjuGR58VbQTA9mFQ67llWrdDfgFHmVWkdvInarQ","text":"/1 hello"}}]}]}
+'
 # On Page Post Comment
 #   1.User comment notification verb = "add" comment_id = "XXXXX"  (PROCESS ALL ADD + COMMENT_ID,  IGNORE OURSELF)
 curl localhost:8080 -X POST -H "Content-Type: application/json" -d '{"entry":[{"id":"185527477968310","time":1700448951,"changes":[{"value":{"from":{"id":"7210497548984257","name":"Alexandre Barilov"},"post":{"status_type":"wall_post","is_published":true,"updated_time":"2023-11-20T02:55:49+0000","permalink_url":"https://www.facebook.com/ConflictAgent/posts/122102459360120481","promotion_status":"ineligible","id":"185527477968310_122102459360120481"},"message":"Мне тоже нужна помощь с конфликтами внутри.","post_id":"185527477968310_122102459360120481","comment_id":"122102459360120481_894903615592966","created_time":1700448949,"item":"comment","parent_id":"185527477968310_122102459360120481","verb":"add"},"field":"feed"}]}],"object":"page"}''
+curl localhost:8080 -X POST -H "Content-Type: application/json" -d '
+{"entry":[{"id":"180270091837264","time":1701820254,"changes":[{"value":{"from":{"id":"6895175880577277","name":"Olena Lytynska"},"message":"How much is to startup?","post_id":"180270091837264_122099509292142709","created_time":1701820253,"item":"post","recipient_id":"180270091837264","verb":"edit"},"field":"feed"}]}],"object":"page"}
+'
 #   2. Page Post user edit notification verb = "edit"  (IGNORE ALL EDIT)
 '{"entry":[{"id":"185527477968310","time":1700448951,"changes":[{"value":{"from":{"id":"7210497548984257","name":"Alexandre Barilov"},"message":"Нужна помощь по конфликтам на работе. Срочно!","post_id":"185527477968310_122102459360120481","created_time":1700448726,"item":"post","recipient_id":"185527477968310","verb":"edit"},"field":"feed"}]}],"object":"page"}'
 #   3. Our comment notification  verb = "add"
@@ -223,3 +231,179 @@ curl localhost:8080 -X POST -H "Content-Type: application/json" -d '{"entry":[{"
         }
     ]
 }
+
+# === User post =====
+{
+  "entry": [
+    {
+      "id": "185060918017731",
+      "time": 1700547270,
+      "changes": [
+        {
+          "value": {
+            "from": {
+              "id": "7023896020990341",
+              "name": "Olena Lytynska"
+            },
+            "message": "asdasd",
+            "post_id": "185060918017731_122093263388133676",
+            "created_time": 1700547269,
+            "item": "post",
+            "recipient_id": "185060918017731",
+            "verb": "edit"
+          },
+          "field": "feed"
+        }
+      ]
+    }
+  ],
+  "object": "page"
+}
+
+
+{
+    "id": "msg_1dKjHvW7MGC91LSUdPCNdnIm",
+    "object": "thread.message",
+    "created_at": 1700702110,
+    "thread_id": "thread_cYv4skGLYI8FioiwyUSYQ23J",
+    "role": "assistant",
+    "content": [
+        {
+            "type": "text",
+            "text": {
+                "value": "Простите, кажется, произошла опечатка в вашем запросе. Вы хотели бы, чтобы я снова нарисовал картинку кошки? Если да, то я готов выполнить ваш запрос.",
+                "annotations": []
+            }
+        }
+    ],
+    "file_ids": [],
+    "assistant_id": "asst_4pwbinW8PLFFX4aY9ZeRML6X",
+    "run_id": "run_MNqixKWHBVwjgOw1BPfA8vJJ",
+    "metadata": {}
+}
+
+{
+    "id": "msg_arZ7MLUUI0plLitVUXwu7Vss",
+    "object": "thread.message",
+    "created_at": 1700702727,
+    "thread_id": "thread_cYv4skGLYI8FioiwyUSYQ23J",
+    "role": "assistant",
+    "content": [
+        {
+            "type": "image_file",
+            "image_file": {
+                "file_id": "file-KS4apuawLXkZRYUrn4dYC7OK"
+            }
+        },
+        {
+            "type": "text",
+            "text": {
+                "value": "Вот ещё один рисунок кошки. Надеюсь, он соответствует тому, что вы хотели увидеть. Если у вас есть какие-либо другие просьбы или вопросы, пожалуйста, сообщите мне.",
+                "annotations": []
+            }
+        }
+    ],
+    "file_ids": [],
+    "assistant_id": "asst_4pwbinW8PLFFX4aY9ZeRML6X",
+    "run_id": "run_mN8yXoJVOx6qbTQfea4F9ycM",
+    "metadata": {}
+}
+{"id": "msg_gDaADfvtwbl1QNgezX38qajH",
+    "object": "thread.message",
+    "created_at": 1700702949,
+    "thread_id": "thread_cYv4skGLYI8FioiwyUSYQ23J",
+    "role": "assistant",
+    "content": [
+        {
+            "type": "text",
+            "text": {
+                "value": "Восьмая глава книги Арнольда Минделла подчеркивает, что обращение к конфликту напрямую, а не уклонение от него, является эффективным способом урегулирования разногласий на всех уровнях общественной жизни. Автор предлагает взглянуть на внутреннюю работу как на метод преодоления страха перед конфликтом, что позволяет лучше осмысливать культурные, личностные и исторические проблемы, способствующие возникновению межкультурного насилия, и развить навыки, необходимые для работы с большими группами людей.\n\nМинделл делает упор на необходимости обучения людей работе друг с другом, а также предоставляет концепцию \"работы с миром\" (worldwork) как метода использования конфликта для преобразования раздоров в сообщество. Он говорит о мире, в котором люди все еще не умеют эффективно общаться в моменты разногласий, и предлагает новую парадигму, которая призывает учиться и слышать друг друга, чтобы вместе стремиться к лучшему миру.\n\nВажной чертой этой главы является поощрение к активному вовлечению в решение конфликтов, вместо пассивного их наблюдения или игнорирования. Это вызывает более глубокое понимание отношений и сообщества, а также вкладывает сильное послание в пользу необходимости социального признания и значимости каждого голоса в обществе.\n\nЕсли вам необходима более подробная информация или дальнейший анализ конкретных аспектов главы, я буду рад помочь.",
+                "annotations": []
+            }
+        }
+    ],
+    "file_ids": [],
+    "assistant_id": "asst_4pwbinW8PLFFX4aY9ZeRML6X",
+    "run_id": "run_MqAUR3OGJOV1iWSshUOHXxYt",
+    "metadata": {}
+}
+{
+    "id": "msg_l6wZxybO7NgfAWWsnikaHHXU",
+    "object": "thread.message",
+    "created_at": 1700703107,
+    "thread_id": "thread_cYv4skGLYI8FioiwyUSYQ23J",
+    "role": "assistant",
+    "content": [
+        {
+            "type": "text",
+            "text": {
+                "value": "Арнольд Минделл в своей работе подчеркивает значимость каждого голоса в обществе, особенно в контексте демократии, где важно осознавать ранг и степень власти каждого человека. Он указывает на то, что демократия требует внимания к этим аспектам не только на политическом уровне, но и в межличностном общении【0†source】.\n\nЧтобы работа с группами была эффективной и беспристрастной, важно обращаться за разрешением к участникам, даже к тем, кто молчит, и быть внимательным к тому, чтобы не использовать свой ранг фасилитатора как инструмент давления. Это подразумевает признание значения каждого мнения в процессе обсуждения тем, связанных с правами человека【4†source】.\n\nМинделл также обращается к ответственности тех, кто занимает привилегированные позиции в обществе, критикуя создание иллюзии равенства, когда не учитываются существующие неравенства в рангах и расовых проблемах【5†source】.\n\nПодлинная работа над созданием равноправных отношений и общества, свободного от гнета и дискриминации, начинается с признания уязвимости человека и необходимости уважения и защиты друг друга【6†source】.\n\nПовышение самосознательности относительно власти и ранга, а также признание того, как неосознаваемый ранг может подавлять людей, является ключом к более справедливому и равноправному обществу【7†source】.",
+                "annotations": []
+            }
+        }
+    ],
+    "file_ids": [],
+    "assistant_id": "asst_4pwbinW8PLFFX4aY9ZeRML6X",
+    "run_id": "run_0EkkdRsgml3wbaQcKLJWxRP8",
+    "metadata": {}
+}
+
+
+curl localhost:8080 -X POST -H "Content-Type: application/json" -d '
+{"object":"page","entry":[{"id":"185527477968310","time":1700709116166,"messaging":[{"sender":{"id":"7210497548984257"},"recipient":{"id":"185527477968310"},"timestamp":1700709115748,"message":{"mid":"m_bmogF6A-XY4gZ1cFepbT3Xkkrk7P4bT1idX_IYDMi2IHtLVsto7rPHKdSx5NXybEn5G29It2Usahe__txZDjtA","text":"как тебя зовут","nlp":{"entities":{"sentiment":[{"confidence":0.73924285173416,"value":"positive"}]},"detected_locales":[{"locale":"ru_RU","confidence":0.9998}]}}}]}]}'
+
+
+
+
+comment->comment->comment
+1. VERB ADD ab->============ POST:{"entry":[{"id":"180270091837264","time":1701828899,"changes":[{"value":{"from":{"id":"6895175880577277","name":"Olena Lytynska"},"post":{"status_type":"wall_post","is_published":true,"updated_time":"2023-12-06T02:14:57+0000","permalink_url":"https://www.facebook.com/permalink.php?story_fbid=122099559092142709","promotion_status":"ineligible","id":"180270091837264_122099559092142709"},"message":"Are you here?","post_id":"180270091837264_122099559092142709","comment_id":"122099559092142709_2613626005479699","created_time":1701828897,"item":"comment","parent_id":"122099559092142709_1325829544794962","verb":"add"},"field":"feed"}]}],"object":"page"}
+2. VERB EDIT ab->============ POST:{"entry":[{"id":"180270091837264","time":1701828899,"changes":[{"value":{"from":{"id":"6895175880577277","name":"Olena Lytynska"},"message":"What are the basic of the startup financing? Could you list major points?\nAlso, if possible provide some examples and your reasoning.","post_id":"180270091837264_122099559092142709","created_time":1701827815,"item":"post","recipient_id":"180270091837264","verb":"edit"},"field":"feed"}]}],"object":"page"}
+
+
+curl localhost:8080 -X POST -H "Content-Type: application/json" -d '
+{"update_id":118445004,"message":{"message_id":7,"from":{"id":1710801225,"is_bot":false,"first_name":"Alexandre","last_name":"Barilov","username":"alexandre_bari","language_code":"en","is_premium":true},"chat":{"id":1710801225,"first_name":"Alexandre","last_name":"Barilov","username":"alexandre_bari","type":"private"},"date":1702758903,"text":"dfasdf"}}
+'
+
+{
+    "update_id": 118445013,
+    "my_chat_member": {
+        "chat": {
+            "id": -4045575637,
+            "title": "Alexandre & FinancialSageBot",
+            "type": "group",
+            "all_members_are_administrators": true
+        },
+        "from": {
+            "id": 1710801225,
+            "is_bot": false,
+            "first_name": "Alexandre",
+            "last_name": "Barilov",
+            "username": "alexandre_bari",
+            "language_code": "en",
+            "is_premium": true
+        },
+        "date": 1702771803,
+        "old_chat_member": {
+            "user": {
+                "id": 6360663950,
+                "is_bot": true,
+                "first_name": "FinancialSageBot",
+                "username": "FinancialSageBot"
+            },
+            "status": "left"
+        },
+        "new_chat_member": {
+            "user": {
+                "id": 6360663950,
+                "is_bot": true,
+                "first_name": "FinancialSageBot",
+                "username": "FinancialSageBot"
+            },
+            "status": "member"
+        }
+    }
+}
+
+curl -i -X GET "https://graph.facebook.com/v18.0/113140591892347/subscribed_apps?access_token=EAAMsJzIR32YBOzZCdkxZAtNDjpHspD0LJjSZCeA7hHjO2fy7t0VfvZAg7RY09KnJxLLrKppmMUlbKL4eBnZA1W12LrK9vZC9Of2BWJZAaEgGAhNj0EG7alU6BtiCi64S98ZCZBG7XB9roLZAHTo9aI28bZCUcWT0dMuS5wy3RlSeV9a8RKk1qpcoTSHJh67fLDX"
+
+curl -i -X POST "https://graph.facebook.com/v18.0/144905368686649/subscribed_apps?subscribed_fields=messages&access_token=EAAMsJzIR32YBO7858IU29gpE6PKxYqy8VP4PmBlz0ARGjQtOSProm31JUZAzm1FkVjFZBh3DFZBr1Sy8VjoctazsCKdm5uXPpXm2xyRDhAsExeASGl1bgr4vyuzyyfH5DpADms2ZBlkxl9JNr5rygdrvfIZCM9cwJdDjtgaFNXGDZBzz4eq387hyko0TML"

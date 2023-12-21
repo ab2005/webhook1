@@ -11,7 +11,8 @@
     "open": "^9.1.0",
     "openai": "^4.19.1",
     "readline-sync": "^1.4.10",
-    "request": "^2.88.0"
+    "request": "^2.88.0",
+    "telegraf": "^4.15.3"
   },
   "scripts": {
     "start": "npx functions-framework --target=webhook --signature-type=http"

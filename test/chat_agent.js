@@ -103,6 +103,7 @@ const pageTokens = [
     ]
   }
 // new-i test: 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
+// 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
 async function modifyJsonFile(bucketName, fileName) {
     try {
         const bucket = storage.bucket(bucketName);
@@ -226,7 +227,7 @@ const readline = require("readline").createInterface({
   output: process.stdout,
 });
 
-const k ='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' //process.env.OPENAI_API_KEY
+const k ='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' //process.env.OPENAI_API_KEY
 let APIcall = async (assistantId, threadId) => {
   var myAssistants;
   while(!myAssistants) {
@@ -243,6 +244,7 @@ let APIcall = async (assistantId, threadId) => {
         limit: "100",
       });
     } catch (err) {
+      console.error(err);
       log(`Invalid key: ${key}`);
     }
   }
