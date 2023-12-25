@@ -406,4 +406,5 @@ curl localhost:8080 -X POST -H "Content-Type: application/json" -d '
 
 curl -i -X GET "https://graph.facebook.com/v18.0/113140591892347/subscribed_apps?access_token=EAAMsJzIR32YBOzZCdkxZAtNDjpHspD0LJjSZCeA7hHjO2fy7t0VfvZAg7RY09KnJxLLrKppmMUlbKL4eBnZA1W12LrK9vZC9Of2BWJZAaEgGAhNj0EG7alU6BtiCi64S98ZCZBG7XB9roLZAHTo9aI28bZCUcWT0dMuS5wy3RlSeV9a8RKk1qpcoTSHJh67fLDX"
 
-curl -i -X POST "https://graph.facebook.com/v18.0/144905368686649/subscribed_apps?subscribed_fields=messages&access_token=EAAMsJzIR32YBO7858IU29gpE6PKxYqy8VP4PmBlz0ARGjQtOSProm31JUZAzm1FkVjFZBh3DFZBr1Sy8VjoctazsCKdm5uXPpXm2xyRDhAsExeASGl1bgr4vyuzyyfH5DpADms2ZBlkxl9JNr5rygdrvfIZCM9cwJdDjtgaFNXGDZBzz4eq387hyko0TML"
+curl -i -X POST "https://graph.facebook.com/v18.0/144905368686649/subscribed_apps?subscribed_fields=messages,feed&access_token=EAAMsJzIR32YBO7858IU29gpE6PKxYqy8VP4PmBlz0ARGjQtOSProm31JUZAzm1FkVjFZBh3DFZBr1Sy8VjoctazsCKdm5uXPpXm2xyRDhAsExeASGl1bgr4vyuzyyfH5DpADms2ZBlkxl9JNr5rygdrvfIZCM9cwJdDjtgaFNXGDZBzz4eq387hyko0TML"
+curl -i -X POST "https://graph.facebook.com/v18.0/144905368686649/subscribed_apps

@@ -44,3 +44,6 @@ process.once('SIGTERM', () => bot.stop('SIGTERM'));
 
 
 // curl -F "url=https://us-west1-newi-1694530739098.cloudfunctions.net/webhook-2?t_a=asst_kDB6db8szlQBqeNYV1uMgewz&t_b=6360663950:AAHg6WmYMOVVdg37nqE6RCN6QhZddVZ8S_Q" https://api.telegram.org/bot6360663950:AAHg6WmYMOVVdg37nqE6RCN6QhZddVZ8S_Q/setWebhook
+ConflictResolutionMasterBot
+ 6598968006:AAG-jWZ9yfb6op3952-OUQ7Ku5I5niAAYl8
+// curl -F "url=https://us-west1-newi-1694530739098.cloudfunctions.net/webhook-2?t_a=asst_WnTIo4rw4dZWz5JGZm2yA23S&t_b=6598968006:AAG-jWZ9yfb6op3952-OUQ7Ku5I5niAAYl8" https://api.telegram.org/bot6598968006:AAG-jWZ9yfb6op3952-OUQ7Ku5I5niAAYl8/setWebhook

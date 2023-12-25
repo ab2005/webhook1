@@ -1,28 +1,27 @@
 const functions = require('@google-cloud/functions-framework');
 
+
+// TODO: revisit
+const request = require('request');
+const express = require('express');
+const { Storage } = require('@google-cloud/storage');
+const storage = new Storage();
+const bucket = storage.bucket('new-i');
+const { OpenAI } = require("openai");
+const { Telegraf } = require('telegraf');
+
+// Cache
+const _cache = {};
+
+// TODO: remove
 // config
 let keys;
 let config;
 
-// Imports dependencies and set up http server
-const
-  request = require('request'),
-  express = require('express'),
-  { urlencoded, json } = require('body-parser'),
-  app = express();
-
-const { Storage } = require('@google-cloud/storage');
-const storage = new Storage();
-const bucket = storage.bucket('new-i');
-
-const OpenAI = require("openai");
-
+// TODO: replace with account
 var openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
-
-// ===== Telegram =====
-const { Telegraf } = require('telegraf');
 
 // ===== Facebook login callback =====
 async function initFacebookUser(code) {
@@ -58,18 +57,23 @@ async function initFacebookUser(code) {
   const userIdResponse = await axios.get('https://graph.facebook.com/v18.0/me', {
     params: {
       fields: 'id',
-      access_token: longLivedToken,
+      access_token: longLivedToken
     }
   });
   const userId = userIdResponse.data.id;
   log('User ID:' + userId);
 
   // Store user ID and access token
-  const config = {
-    'userId': userId,
-    'accessToken': longLivedToken,
-  };
-  await saveJson(`users/${userId}/config`, config);
+  const
+
+  const userConfigName = `users/${userId}/config`;
+  let userConfig = loadJson(userConfigName);
+  if (!userConfig) {
+    userConfig = {
+      'userId': userId,
+      'accessToken': longLivedToken,
+    };
+  }
 
   // Store user pages tokens and names
   const pagesResponse = await axios.get('https://graph.facebook.com/v18.0/me/accounts', {
@@ -83,13 +87,17 @@ async function initFacebookUser(code) {
     console.log('Page ID:', page.id);
     console.log('Page Name:', page.name);
     console.log('Page Access Token:', page.access_token);
-    const pageConfig = {
-      'pageID': page.id,
-      'name' : page.name,
-      'token': page.access_token,
-    };
-    log(`Saving page pages/${page.id}/config...`);
-    await saveJson(`pages/${page.id}/config`, pageConfig);
+    const pageName = `pages/${page.id}/config`;
+    let pageConfig = loadJson(pageName);
+    if (!pageConfig) {
+      pageConfig = {};
+    }
+    pageConfig.pageID = page.id;
+    pageConfig.name = page.name;
+    pageConfig.token = page.access_token;
+    pageConfig.admin = userId;
+    log(`Saving pageconfig pages/${page.id}/config...`);
+    saveJson(pageName, pageConfig);
 
     // Subscribe
     const subscriptions = 'email,feed,group_feed,inbox_labels,mention,message_reactions,messages,';
@@ -104,6 +112,9 @@ async function initFacebookUser(code) {
     const subscriptionReply = JSON.stringify(subscribedResponse.data);
     log(`Subscribe responce: ${subscriptionReply}`);
   }
+
+  // Store admin user config
+  saveJson(userConfigName, userConfig);
 }
 
 async function onPostTelegram(req, res, assistantId, token) {
@@ -149,7 +160,7 @@ async function onPostTelegram(req, res, assistantId, token) {
         config = {
           'threadId' : thread.id,
         };
-        await saveJson(configName, config);
+        saveJson(configName, config);
       }
 
       const thread = await openai.beta.threads.retrieve(config.threadId);
@@ -163,6 +174,8 @@ async function onPostTelegram(req, res, assistantId, token) {
           ctx.reply(JSON.stringify(response));
         }
       }
+      // TODO: check for pending requests
+      // const pendingRequests = _cashe[`requests/${assistantId}/${config.threadId}`];
     });
 
     await bot.handleUpdate(req.body);
@@ -286,7 +299,6 @@ function onMessage(messageEvent) {
   if (messageEvent.message.is_echo === true) {
     return;
   }
-
   // Checks if the message contains text
   if (messageEvent.message.text) {
     onMessageWithText(messageEvent);
@@ -323,34 +335,12 @@ async function submitAgentReplyToMessage(messageEvent) {
   const pageId = messageEvent.recipient.id;
   let userInput= messageEvent.message.text;
 
-  log("user input:>>" + userInput);
 
+  const page = await getPageConfig(pageId);
+  sendMessengerMessage(userId, page, null);
+  const userConfig = await getUserConfig(pageId, userId);
+  const peersonaType = 'assistant';
   try {
-    const userConfig = await getUserConfig(pageId, userId);
-    const personas = await getPersonas(pageId);
-    let personaId = userConfig.personaId;
-    if (!personaId) {
-      personaId = 1;
-    }
-    const input = getAgentAndInput(userInput);
-    if (input) {
-      personaId = input.personaId;
-      userInput = input.text;
-      logJ("input:", input);
-    }
-
-    let persona = personas[personaId];
-    if (!persona) {
-      console.error("Wrong persona id: " + personaId);
-      persona = personas[userConfig.personaId]
-    }
-    logJ("agent persona:", persona);
-    userConfig.run_count += 1;
-    userConfig.personaId = personaId;
-    await saveUserConfig(pageId, userId, userConfig);
-
-    const page = await getPageConfig(pageId);
-
     if (!openai) {
       console.error(`No key found for ${pageId}, try to get one...`);
       try {
@@ -367,7 +357,7 @@ async function submitAgentReplyToMessage(messageEvent) {
         }
         // TODO: save personas
         page.key = userInput;
-        await savePageConfig(pageId, page);
+        savePageConfig(pageId, page);
         openai = ai;
       } catch (err) {
         console.error(err);
@@ -377,14 +367,15 @@ async function submitAgentReplyToMessage(messageEvent) {
       }
     }
 
-    if (persona.type === 'chat') {
+    if (peersonaType === 'chat') {
       // load recent messages
-      const messages = await getPageMessages(pageId, userId);
+      // TODO: revert this!!
+      const messages = null;//await getPageMessages(pageId, userId);
       log("user input:" + userInput);
       const gptResponse = await askChatGpt(userInput, messages, userId, pageId, page, persona.chat);
       logJ("Message event processed by chat:", gptResponse);
       return gptResponse;
-    } else if (persona.type === 'assistant') {
+    } else if (peersonaType === 'assistant') {
       log("askGptAssistant");
       logJ("userConfig:", userConfig);
       if (!userConfig.threadId || userConfig.threadId === '0') {
@@ -393,7 +384,7 @@ async function submitAgentReplyToMessage(messageEvent) {
         userConfig.threadId = thread.id;
         // save config
         log(`create new assistant thread ${config.threadId} for user ${userId}`);
-        await saveUserConfig(pageId, userId, userConfig);
+        saveUserConfig(pageId, userId, userConfig);
         logJ("userConfig:", userConfig);
       }
       const gptResponse =  await askAssistant(page.assistantId, userConfig.threadId, userInput);
@@ -421,6 +412,11 @@ async function submitAgentReplyToMessage(messageEvent) {
     }
   } catch (error) {
     console.error(`An error occurred: ${error}`);
+    const message = {
+      'text' : `I'm sorry, but an error occurred while processing your request: ${error}`
+    };
+    logJ("Message event processed by assistant:", message);
+    sendMessengerMessage(userId, page, message);
     return "I'm sorry, but an error occurred while processing your request.";
   }
 }
@@ -453,16 +449,27 @@ async function askChatGpt(userInput, messages, userId, pageId, page, gptModel) {
   log(`gptModel: ${gptModel} `);
 
 
-  if (prompt) {
-    messages[0].role = 'system';
-    messages[0].content = prompt;
+  if (messages) {
+    if (prompt) {
+      messages[0].role = 'system';
+      messages[0].content = prompt;
+    }
+      // Add the user's input as a new message to the array
+    messages.push({
+      role: "user",
+      content: userInput,
+    });
+  } else {
+    messages = [
+      {
+        role: "system",
+        content: "You are a helpful assistant",
+      },{
+        role: "user",
+        content: userInput,
+      }
+    ];
   }
-
-  // Add the user's input as a new message to the array
-  messages.push({
-    role: "user",
-    content: userInput,
-  });
 
   console.time("askChatGpt");
   const response = await openai.chat.completions.create({
@@ -476,7 +483,7 @@ async function askChatGpt(userInput, messages, userId, pageId, page, gptModel) {
   // Check the response for the expected structure and return the message content
   if (response.choices && response.choices.length > 0 && response.choices[0].message) {
     messages.push(response.choices[0].message);
-    await savePageMessages(pageId, userId, messages);
+    savePageMessages(pageId, userId, messages);
     const reply = {
       'text' : response.choices[0].message.content
     };
@@ -492,24 +499,45 @@ async function askChatGpt(userInput, messages, userId, pageId, page, gptModel) {
 
 // Sends response messages via GraphQL
 function sendMessengerMessage(userId, page, message) {
-  console.log(`Sending message "${message}" to ${userId} on behalf of ${page.name}`);
-  request({
-    'uri': 'https://graph.facebook.com/v18.0/me/messages',
-    'qs': { 'access_token': page.token },
-    'method': 'POST',
-    'json': {
-      'recipient': {
-        'id': userId
-      },
-      'message': message
-    }
-  }, (err, _res, _body) => {
-    if (!err) {
-      console.log(`Message sent!`);
-    } else {
-      console.error(err);
-    }
-  });
+  if (!message) {
+    console.log(`Sending message "${message}" to ${userId} on behalf of ${page.name}`);
+    request({
+      'uri': 'https://graph.facebook.com/v18.0/me/messages',
+      'qs': { 'access_token': page.token },
+      'method': 'POST',
+      'json': {
+        'recipient': {
+          'id': userId
+        },
+        'sender_action': 'typing_on'
+      }
+    }, (err, _res, _body) => {
+      if (!err) {
+        console.log(`Typing on..`);
+      } else {
+        console.error(err);
+      }
+    });
+  } else {
+    request({
+      'uri': 'https://graph.facebook.com/v18.0/me/messages',
+      'qs': { 'access_token': page.token },
+      'method': 'POST',
+      'json': {
+        'recipient': {
+          'id': userId
+        },
+        'message': message
+      }
+    }, (err, _res, _body) => {
+      if (!err) {
+        console.log(`Message sent!`);
+      } else {
+        console.error(err);
+      }
+    });
+
+  }
 }
 
 async function createAssistantWithThread(assistantId, assistantThreadId) {
@@ -560,118 +588,44 @@ async function createAssistantWithThread(assistantId, assistantThreadId) {
 
 // Main function that user input
 async function askAssistant(assistantId, threadId, userInput) {
-  if (!assistantId) {
-    logJ("Error: Assistant ID is missing.");
-    return;
+  if (!assistantId || !threadId) {
+    throw new Error("Assistant ID or Thread ID is missing.");
   }
-  await openai.beta.threads.messages.create(threadId, {
-    role: "user",
-    content: userInput,
-  });
-
-  const run = await openai.beta.threads.runs.create(threadId, {
-    assistant_id: assistantId,
-  });
-
-  let runStatus = await openai.beta.threads.runs.retrieve(
-    threadId,
-    run.id
-  );
-
-  // Polling mechanism to see if runStatus is completed
-  // This should be made more robust.
-  while (runStatus.status !== "completed") {
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    runStatus = await openai.beta.threads.runs.retrieve(threadId, run.id);
-  }
-
-  // Get the last assistant message from the messages array
-  const messages = await openai.beta.threads.messages.list(threadId);
-
-  // Find the last message for the current run
-  const lastMessageForRun = messages.data
-    .filter(
-      (message) => message.run_id === run.id && message.role === "assistant"
-    )
-    .pop();
-
-  // If an assistant message is found, console.log() it
-  if (lastMessageForRun) {
+  try {
+    await openai.beta.threads.messages.create(threadId, {
+      role: "user",
+      content: userInput,
+    });
+    const run = await openai.beta.threads.runs.create(threadId, {
+      assistant_id: assistantId,
+    });
+    let runStatus = await openai.beta.threads.runs.retrieve(threadId, run.id);
+    let attempts = 0;
+    while (runStatus.status !== "completed" && attempts < 20) {
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      runStatus = await openai.beta.threads.runs.retrieve(threadId, run.id);
+      attempts++;
+    }
+    if (runStatus.status !== "completed") {
+      await openai.beta.threads.runs.cancel(threadId, run.id);
+      throw new Error("Run did not complete in the expected time.");
+    }
+    const messages = await openai.beta.threads.messages.list(threadId);
+    const lastMessageForRun = messages.data
+      .filter(
+        (message) => message.run_id === run.id && message.role === "assistant"
+      )
+      .pop();
+    if (!lastMessageForRun) {
+      throw new Error("No assistant message found for the run.");
+    }
     console.log(JSON.stringify(lastMessageForRun.content));
+    return lastMessageForRun.content;
+  } catch (error) {
+    console.error(`Error in askAssistant: ${error.message}`);
+    throw error;
   }
-  return lastMessageForRun.content;
 }
-
-// async function askGptAssistant(userInput, userId, config, pageId, page, assistantConfig) {
-//   logJ("config:", config);
-//   logJ("assistantConfig:", assistantConfig);
-//   const res = createAssistantWithThread(page.agentId , config.threadId);
-//   const assistant = res.assistant;
-//   const assistantThreadId = res.thread.id;
-
-//   // Additional logic for handling user input, etc., would go here
-//   const message = await openai.beta.threads.messages.create(assistantThreadId, {role: "user", content: userInput});
-//   const userMessageId = message.id;
-
-//   // ask
-//   let run = await openai.beta.threads.runs.create(
-//     assistantThreadId,
-//     {
-//       assistant_id: assistantId,
-//       instructions: page.propmt
-//     }
-//   );
-
-//   while (run.status !== 'completed') {
-//     run = await openai.beta.threads.runs.retrieve(assistantThreadId, run.id);
-//   }
-
-//   // get gpt results
-//   const messages = await openai.beta.threads.messages.list(assistantThreadId);
-//   for (let i = 0; i < messages.data.length; i++) {
-//     if (userMessageId === messages.data[i].id) {
-//       // quit processsing
-//       break;
-//     }
-//     reply = await sendAssistantReplyMessage(assistantThreadId, messages.data[i], userId, page);
-//   }
-
-//   // update user config
-//   config.threadId = assistantThreadId;
-//   // TODO await ??
-//   logJ("save config:", config);
-//   await saveUserConfig(pageId, userId, config);
-
-//   // update page config
-//   page.agentId = assistantId;
-//   logJ("save page config:", page);
-//   await saveJson(`pages/${pageId}/config`, page);
-//   return reply;
-// }
-
-// async function sendAssistantReplyMessage(threadId, message, userId, page) {
-//   log("sendAssistantReplyMessage...");
-//   try {
-//     for (let i = 0; i < message.content.length; i++) {
-//       const content = message.content[i];
-//       if (content.text) {
-//         const text = await processText(content.text);
-//         const reply = {
-//           'text' : text
-//         };
-//         sendMessengerMessage(userId, page, reply);
-//       } else if (content.image_file) {
-//         const image = await processImage(content.image_file);
-//         // TODO: send image
-//       } else {
-//         console.error("Unknown type " + content.type);
-//       }
-//     }
-//   } catch (error) {
-//       console.error(error);
-//   }
-//   log("sendAssistantReplyMessage done.");
-// }
 
 async function processText(text) {
   const annotations = text.annotations;
@@ -708,8 +662,6 @@ async function processImage(imageFile) {
   log(file);
   log(`Click <here> to download ${file.filename}`);
 }
-
-
 
 // TODO;
 function onMessageWithAttachment(messageEvent) {
@@ -815,7 +767,7 @@ const pageTokens = [
   'name': 'FinancialSage',
   'assistantId': 'asst_kDB6db8szlQBqeNYV1uMgewz',
   'propmt':
-    'Your role as a GPT is to act as a Financial Assistant. You will provide guidance on Startup businesses and taxes. .While you should be informative, you must not give legally binding advice ' +
+    'Your name is "FinancialSage". Your role is to act as a Financial Assistant. You will provide guidance on Startup businesses and taxes. While you should be informative, you must not give legally binding advice ' +
     'or specific financial recommendations for individual cases. Instead, offer general information and suggest users consult with a qualified professional for personalized advice.' +
     'Avoid making predictions or guarantees about financial markets or individual investments. Always maintain a professional and neutral tone, focusing on delivering factual and helpful information. ' +
     'If a question falls outside your scope of knowledge or requires personalized advice, guide users to seek assistance from qualified professionals.',
@@ -891,39 +843,41 @@ function replyToFeed(value, pageId) {
 async function submitAgentReplyToPostOrComment(userInput, pageId, posterId, postId) {
   const userId = 0;
   try {
-    const userConfig = await getUserConfig(pageId, 0);
-    const personas = await getPersonas(pageId);
-    let personaId = userConfig.personaId;
-    if (!personaId) {
-      personaId = 1;
-    }
-    const input = getAgentAndInput(userInput);
-    if (input) {
-      personaId = input.personaId;
-      userInput = input.text;
-      logJ("input:", input);
-    }
-
-    let persona = personas[personaId];
-    if (!persona) {
-      console.error("Wrong persona id: " + personaId);
-      persona = personas[userConfig.personaId]
-    }
-    logJ("agent persona:", persona);
-    userConfig.run_count += 1;
-    userConfig.personaId = personaId;
-    await saveUserConfig(pageId, userId, userConfig);
-
     const page = await getPageConfig(pageId);
+    sendMessengerMessage(userId, page, null);
+    const userConfig = await getUserConfig(pageId, 0);
+    // const personas = await getPersonas(pageId);
+    // let personaId = userConfig.personaId;
+    // if (!personaId) {
+    //   personaId = 1;
+    // }
+    // const input = getAgentAndInput(userInput);
+    // if (input) {
+    //   personaId = input.personaId;
+    //   userInput = input.text;
+    //   logJ("input:", input);
+    // }
 
-    if (persona.type === 'chat') {
+    // let persona = personas[1]; // alway to use assistant
+    // if (!persona) {
+    //   console.error("Wrong persona id: " + personaId);
+    //   persona = personas[userConfig.personaId]
+    // }
+    // logJ("agent persona:", persona);
+    // userConfig.run_count += 1;
+    // userConfig.personaId = personaId;
+    // await saveUserConfig(pageId, userId, userConfig);
+
+    const personaType = 'assistant';
+
+    if (personaType === 'chat') {
       // load recent messages
       const messages = await getPageMessages(pageId, userId);
       log("user input:" + userInput);
       const gptResponse = await askChatGpt(userInput, messages, userId, pageId, page, persona.chat);
       logJ("Message event processed by chat:", gptResponse);
       return gptResponse;
-    } else if (persona.type === 'assistant') {
+    } else if (personaType === 'assistant') {
       log("askGptAssistant");
       logJ("userConfig:", userConfig);
       if (!userConfig.threadId || userConfig.threadId === '0') {
@@ -961,6 +915,10 @@ async function submitAgentReplyToPostOrComment(userInput, pageId, posterId, post
 
     }
   } catch (error) {
+    // if error 400, thread is busy, then put in the queue
+    if (error) {
+
+    }
     console.error(`An error occurred: ${error}`);
     return "I'm sorry, but an error occurred while processing your request.";
   }
@@ -991,21 +949,30 @@ function sendCommentOnPostOrComment(pageId, postId, message, pageToken) {
 
 
 // ===== Store ======
+// Returns cahced object or load object from file
+// Return null if no object was stored
 async function loadJson(fileName) {
+  const cached = _cache[fileName];
+  if (cached) return cached;
+  // load file
   const file = bucket.file(`${fileName}.json`);
   const exists = (await file.exists())[0];
   if (exists) {
     const data = (await file.download())[0];
     const json = JSON.parse(data.toString());
     log(`"${fileName}" loaded: ` + json);
+    _cache[fileName] = json;
     return json;
   }
   return false;
 }
 
 async function saveJson(fileName, json) {
+  // sstore to cache
+  _cache[fileName] = json;
+  // save asyncroneously
   const file = bucket.file(`${fileName}.json`);
-  await file.save(JSON.stringify(json, null, 2), {
+  file.save(JSON.stringify(json, null, 2), {
     contentType: 'application/json'
   });
   log(`"${fileName}" saved: ` + json);
@@ -1043,7 +1010,7 @@ async function getPageMessages(pageId, userId) {
 async function savePageMessages(pageId, userId, messages) {
   // trim mesages
   const trimmedMessages = getLastElements(messages, 40);
-  await saveJson(`pages/${pageId}/${userId}/messages`, trimmedMessages);
+  saveJson(`pages/${pageId}/${userId}/messages`, trimmedMessages);
 }
 
 function getLastElements(array, n) {
@@ -1059,7 +1026,7 @@ async function getPageConfig(pageId) {
 }
 
 async function savePageConfig(pageId, config) {
-  await saveJson(`pages/${pageId}/config`, config);
+  saveJson(`pages/${pageId}/config`, config);
 }
 
 async function getPersonas(pageId) {
@@ -1089,13 +1056,13 @@ async function getPersonas(pageId) {
       }
     }
     ];
-    await savePersonas(pageId,personas);
+    savePersonas(pageId,personas);
   }
   return personas;
 }
 
 async function savePersonas(pageId, personas) {
-  await saveJson(`pages/${pageId}/personas`, personas);
+  saveJson(`pages/${pageId}/personas`, personas);
 }
 
 async function getUserConfig(pageId, userId) {
@@ -1107,13 +1074,13 @@ async function getUserConfig(pageId, userId) {
       'run_count' : 0,
       'tokens' : 0
     };
-    await saveUserConfig(pageId, userId, config);
+    saveUserConfig(pageId, userId, config);
   }
   return config;
 }
 
 async function saveUserConfig(pageId, userId, config) {
-  await saveJson(`pages/${pageId}/${userId}/config`, config);
+  saveJson(`pages/${pageId}/${userId}/config`, config);
 }
 
 async function loadConfig() {
