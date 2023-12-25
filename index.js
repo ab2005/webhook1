@@ -99,6 +99,9 @@ async function initFacebookUser(code) {
     log(`Saving pageconfig pages/${page.id}/config...`);
     saveJson(pageName, pageConfig);
 
+    // Add page id to admin user's page list
+    userConfig.pages[page.id] = page.access_token;
+
     // Subscribe
     const subscriptions = 'email,feed,group_feed,inbox_labels,mention,message_reactions,messages,';
     log("url:" + `https://graph.facebook.com/v18.0/${page.id}/subscribed_apps`);
@@ -312,6 +315,14 @@ function onMessageWithText(messageEvent) {
   const pageId = messageEvent.recipient.id;
 
   log("Submit text messasge processing from " + userId + ": " + messageEvent.message.text);
+
+
+
+  if (processCommand()) {
+
+  } else {
+
+  }
 
   // Submit messasge processing
   submitAgentReplyToMessage(messageEvent)
@@ -1122,4 +1133,110 @@ function wait(duration) {
 }
 
 
-// curl -F "url=https://us-west1-newi-1694530739098.cloudfunctions.net/webhook-2/telegramBot" https://api.telegram.org/bot6360663950:AAHg6WmYMOVVdg37nqE6RCN6QhZddVZ8S_Q/setWebhook
+const ai_host = {
+  admins : [], // list of admins (user id: fb, ig, telegtam, viber). ex: aiHOst.admin['']
+  keys : {
+    openai : [], // ex: aiHost.keys.openai['xyz123'] = 'xyz123';
+    aihost : [],
+    flowise : [], // reserved
+    botpress : [], // reserved
+    mistral : [] // resserved
+  },
+  assistants : [],
+  default_assistant : {
+    key_name : '', // openai, aihost, flowise, ...
+    key_value : '', // api key
+    assistant_id : '', //
+  },
+  access : 'none', // "none", "all", "invited_only" "facebook", "instagram", "whatsapp", "telegram", "slack", "viber"
+  users : [], //  userid
+};
+
+function createAiHost(userId, keyName, keyValue) {
+  let aiHost = {
+    admins : [userId], // list of admins (user id: fb, ig, telegtam, viber). ex: aiHOst.admin['']
+    keys : {
+      openai : [], // ex: aiHost.keys.openai['xyz123'] = 'xyz123';
+      aihost : [],
+      flowise : [], // reserved
+      botpress : [], // reserved
+      mistral : [], // resserved
+    },
+    assistants : [],
+    default_assistant : {
+      key : {
+        name : key_name, // openai, aihost, flowise, ...
+        value : key_value, // api key
+      },
+      assistant : {
+        id : '',
+        name : '',
+      }
+    },
+    access : 'none', // "none", "all", "invited_only" "facebook", "instagram", "whatsapp", "telegram", "slack", "viber"
+    users : [], //  userid
+  };
+
+  if (aiHost.keys.hasOwnProperty(keyName)) {
+    aiHost.keys[keyName][0] = keyValue;
+  } else {
+    throw new Error('Invalid keyName');
+  }
+}
+
+function addAiHost(aiHost, keyName, keyValue) {
+  if (aiHost.keys.hasOwnProperty(keyName)) {
+    let keys = aiHost.keys[keyName];
+    if (!keys.includes(keyValue)) {
+      keys.push(keyValue);
+    }
+  } else {
+    throw new Error('Invalid keyName');
+  }
+}
+
+function removeAiHost(aiHost, keyName, keyValue) {
+  if (aiHost.keys.hasOwnProperty(keyName)) {
+    let keys = aiHost.keys[keyName];
+    if (keys.includes(keyValue)) {
+      aiHost.keys[keyName] = keys.filter(item => item !== keyValue);
+    }
+  } else {
+    throw new Error('Invalid keyName');
+  }
+}
+
+function getAssistantsWithKeyName(keyName, keyValue) {
+  if (keyName === 'openai') {
+    // TODO: cosider cashing
+    // Create an OpeenAI instance and call openai API to list assistants
+    const openai = new OpenAI({ apiKey: key_value });
+    const assistants = awaitopenai.beta.assistants.list({
+      order: "desc",
+      limit: "100",
+    });
+    for (let i = 0; i < myAssistants.body.data.length; i++) {
+      const assistant = myAssistants.body.data[i];
+      log(JSON.stringify(assistant));
+      assistants.push({
+        key : {
+          name : keyName,
+          value : keyValue,
+        },
+        assistant : {
+          id : assistant.id,
+          name :
+        }
+      });
+    }
+  } else if (keyName === 'aihost') {
+
+  }
+}
+
+function listAssistants(aiHost, userId) {
+  if (aiHost.admins.include(usserId)) {
+    const assistants = [];
+
+  }
+}
