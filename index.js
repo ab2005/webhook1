@@ -9,6 +9,11 @@ const storage = new Storage();
 const bucket = storage.bucket('new-i');
 const { OpenAI } = require("openai");
 const { Telegraf } = require('telegraf');
+const fs = require("fs");
+const stream = require('stream');
+const { promisify } = require('util');
+const pipeline = promisify(stream.pipeline);
+const FormData = require('form-data');
 
 // Cache
 const _cache = {};
@@ -64,17 +69,17 @@ async function initFacebookUser(code) {
   log('User ID:' + userId);
 
   // Store user ID and access token
-  const
+  const config = {
+    'userId': userId,
+    'accessToken': longLivedToken,
+  };
+  await saveJson(`users/${userId}/config`, config);
 
-  const userConfigName = `users/${userId}/config`;
-  let userConfig = loadJson(userConfigName);
-  if (!userConfig) {
-    userConfig = {
-      'userId': userId,
-      'accessToken': longLivedToken,
-    };
-  }
 
+  const assistants = await openai.beta.assistants.list({
+    order: "desc",
+    limit: "100",
+  });
   // Store user pages tokens and names
   const pagesResponse = await axios.get('https://graph.facebook.com/v18.0/me/accounts', {
     params: {
@@ -87,20 +92,27 @@ async function initFacebookUser(code) {
     console.log('Page ID:', page.id);
     console.log('Page Name:', page.name);
     console.log('Page Access Token:', page.access_token);
-    const pageName = `pages/${page.id}/config`;
-    let pageConfig = loadJson(pageName);
-    if (!pageConfig) {
-      pageConfig = {};
-    }
-    pageConfig.pageID = page.id;
-    pageConfig.name = page.name;
-    pageConfig.token = page.access_token;
-    pageConfig.admin = userId;
-    log(`Saving pageconfig pages/${page.id}/config...`);
-    saveJson(pageName, pageConfig);
+    let assistantId = "asst_4uEa9UdJRJgus4bfcXBkAPn9";
+    // search for page name match
+    for (let i = 0; i < assistants.body.data.length; i++) {
+      const ass = assistants.body.data[i];
+      if (ass.name === page.name) {
+        assistantId = ass.id;
+        log(`Found page: ${page.name}, assisgning assistant: ${ass.id}`);
+      }
+  }
 
-    // Add page id to admin user's page list
-    userConfig.pages[page.id] = page.access_token;
+    if (page.id === "210267618829827") {
+      assistantId = "asst_hiimHnR1fu5X9loUaUi000ao";
+    }
+    const pageConfig = {
+      'pageID': page.id,
+      'name' : page.name,
+      'token': page.access_token,
+      'assistantId' : assistantId
+    };
+    log(`Saving page pages/${page.id}/config...`);
+    await saveJson(`pages/${page.id}/config`, pageConfig);
 
     // Subscribe
     const subscriptions = 'email,feed,group_feed,inbox_labels,mention,message_reactions,messages,';
@@ -115,9 +127,6 @@ async function initFacebookUser(code) {
     const subscriptionReply = JSON.stringify(subscribedResponse.data);
     log(`Subscribe responce: ${subscriptionReply}`);
   }
-
-  // Store admin user config
-  saveJson(userConfigName, userConfig);
 }
 
 async function onPostTelegram(req, res, assistantId, token) {
@@ -163,7 +172,7 @@ async function onPostTelegram(req, res, assistantId, token) {
         config = {
           'threadId' : thread.id,
         };
-        saveJson(configName, config);
+        await saveJson(configName, config);
       }
 
       const thread = await openai.beta.threads.retrieve(config.threadId);
@@ -177,8 +186,6 @@ async function onPostTelegram(req, res, assistantId, token) {
           ctx.reply(JSON.stringify(response));
         }
       }
-      // TODO: check for pending requests
-      // const pendingRequests = _cashe[`requests/${assistantId}/${config.threadId}`];
     });
 
     await bot.handleUpdate(req.body);
@@ -259,14 +266,14 @@ function onGet(req, res) {
   }
 }
 
-function onPost(req, res) {
+async function onPost(req, res) {
   logJ("============ POST:", req.body);
   try {
     let body = req.body;
     // Checks if this is an event from a page subscription
     if (body.object === 'page') {
-      // Iterates over each entry - there may be multiple if batched
-      body.entry.forEach(function(entry) {
+      for (let i = 0; i < body.entry.length; i++) {
+        const entry = body.entry[i];
         if (entry.changes) {
           if (!openai) {
             // TODO: ask for key
@@ -279,12 +286,12 @@ function onPost(req, res) {
 //          log("Processing message event:" + JSON.stringify(messageEvent));
           // Check if the event is a message or postback and generate a response
           if (messageEvent.message) {
-            onMessage(messageEvent);
+            await onMessage(messageEvent);
           } else if (messageEvent.postback) {
             onPostback(messageEvent);
           }
         }
-      });
+      }
     } else {
       log(`Unknown object: ` +  JSON.stringify(body));
       // Returns a '404 Not Found' if event is not from a page subscription
@@ -298,38 +305,26 @@ function onPost(req, res) {
 }
 
 // Handle Messenger message event
-function onMessage(messageEvent) {
+async function onMessage(messageEvent) {
   if (messageEvent.message.is_echo === true) {
     return;
   }
   // Checks if the message contains text
   if (messageEvent.message.text) {
-    onMessageWithText(messageEvent);
+    await onMessageWithText(messageEvent);
   } else if (messageEvent.message.attachments) {
-    onMessageWithAttachment(messageEvent)
+    await onMessageWithAttachment(messageEvent)
   }
 }
 
-function onMessageWithText(messageEvent) {
+async function onMessageWithText(messageEvent) {
   const userId = messageEvent.sender.id;
   const pageId = messageEvent.recipient.id;
 
   log("Submit text messasge processing from " + userId + ": " + messageEvent.message.text);
 
-
-
-  if (processCommand()) {
-
-  } else {
-
-  }
-
   // Submit messasge processing
-  submitAgentReplyToMessage(messageEvent)
-    .catch(error => {
-        console.error(error);
-        logJ("Error processing messаge event",  messageEvent);
-    });
+  await submitAgentReplyToMessage(messageEvent);
 }
 
 /*
@@ -341,14 +336,14 @@ onPost
                     sendMessengerMessage
 */
 // Submit for processing reply for user message
-async function submitAgentReplyToMessage(messageEvent) {
+async function submitAgentReplyToMessage(messageEvent, skipReply) {
   const userId = messageEvent.sender.id;
   const pageId = messageEvent.recipient.id;
   let userInput= messageEvent.message.text;
 
 
   const page = await getPageConfig(pageId);
-  sendMessengerMessage(userId, page, null);
+  await sendMessengerMessage(userId, page, null);
   const userConfig = await getUserConfig(pageId, userId);
   const peersonaType = 'assistant';
   try {
@@ -402,6 +397,7 @@ async function submitAgentReplyToMessage(messageEvent) {
       let hasImages;
       let hasFiles;
       let hasText;
+      let messages = [];
       for (let i = 0; i < gptResponse.length; i++) {
           const reply = gptResponse[i];
           if (reply.type === 'text') {
@@ -411,15 +407,17 @@ async function submitAgentReplyToMessage(messageEvent) {
               'text' : reply.text.value
             };
             logJ("Message event processed by assistant:", message);
-            sendMessengerMessage(userId, page, message);
+            if (!skipReply) {
+              await sendMessengerMessage(userId, page, message);
+            }
+            messages.push(message);
           } else if (reply.type === 'image') {
             hasImage = true;
           } else if (reply.type === 'file') {
             hasFile = true;
           }
       }
-      return `Assistant sent ${gptResponse.length} message(s) to user ${userId}.`;
-
+      return messages;
     }
   } catch (error) {
     console.error(`An error occurred: ${error}`);
@@ -427,7 +425,7 @@ async function submitAgentReplyToMessage(messageEvent) {
       'text' : `I'm sorry, but an error occurred while processing your request: ${error}`
     };
     logJ("Message event processed by assistant:", message);
-    sendMessengerMessage(userId, page, message);
+    await sendMessengerMessage(userId, page, message);
     return "I'm sorry, but an error occurred while processing your request.";
   }
 }
@@ -498,7 +496,7 @@ async function askChatGpt(userInput, messages, userId, pageId, page, gptModel) {
     const reply = {
       'text' : response.choices[0].message.content
     };
-    sendMessengerMessage(userId, page, reply);
+    await sendMessengerMessage(userId, page, reply);
     return reply;
   } else {
     // If the response doesn't have the expected structure, throw an error
@@ -509,7 +507,7 @@ async function askChatGpt(userInput, messages, userId, pageId, page, gptModel) {
 }
 
 // Sends response messages via GraphQL
-function sendMessengerMessage(userId, page, message) {
+async function sendMessengerMessage(userId, page, message) {
   if (!message) {
     console.log(`Sending message "${message}" to ${userId} on behalf of ${page.name}`);
     request({
@@ -674,70 +672,98 @@ async function processImage(imageFile) {
   log(`Click <here> to download ${file.filename}`);
 }
 
-// TODO;
-function onMessageWithAttachment(messageEvent) {
+
+function extractFileExtension(url) {
+  // Extracting the part of the URL after the last '/'
+  const noParamsUrl = url.split('?')[0];
+  log("no params url:" + noParamsUrl);
+  const lastSegment = noParamsUrl.split('/').pop();
+  log("last segment:" + lastSegment);
+
+  // Finding the position of the last dot in the last segment
+  const lastDotPosition = lastSegment.lastIndexOf('.');
+
+  // Extracting the file extension
+  const extension = lastDotPosition !== -1 ? lastSegment.substring(lastDotPosition + 1) : '';
+  log("extension:" + extension);
+
+  return extension;
+}
+
+async function onMessageWithAttachment(messageEvent) {
+  const userId = messageEvent.sender.id;
+  const pageId = messageEvent.recipient.id;
+  const attachments = messageEvent.message.attachments;
+  let page;
+
+  for (let i = 0; i < attachments.length; i++) {
+    const attachment = attachments[i];
     // Get the URL of the message attachment
-    let attachmentUrl = messageEvent.message.attachments[0].payload.url;
-
-    const attachments = messageEvent.message.attachments;
-
-    for (let i = 0; i < attachments.length; i++) {
-      const attachmenet = attachments[i];
+    const attachmentUrl = attachment.payload.url;
+    logJ("attachment:", attachment);
+    if (attachment.type === 'audio') {
+      const extension = extractFileExtension(attachmentUrl);
+      log(extension); // Output will be the file extension
+      const tempFilePath = `${userId}_${pageId}_temp_audio.${extension}`;
       try {
-        // Get the URL of the message attachment
-        const attachmentUrl = attachment.payload.url;
-        console.log("attachmentUrl:", attachmentUrl);
-        if (attachment.type === 'audio') {
-          // Fetch the attachment as a stream and create the transcription
-          https.get(attachmentUrl, async (response) => {
-              if (response.statusCode === 200) {
-                  const transcription = await openai.audio.transcriptions.create({
-                      file: response,
-                      model: "whisper-1",
-                  });
-                  console.log(transcription.text);
-                  // TODO: Handle the transcription as needed
-              } else {
-                  console.error(`Request Failed. Status Code: ${response.statusCode}`);
-              }
-          }).on('error', (e) => {
-              console.error(`Error making HTTP request: ${e.message}`);
-          });
+        if (!page) {
+          page = await getPageConfig(pageId);
         }
+        // typing on...
+        await sendMessengerMessage(userId, page, null);
+        // Download the file from URL
+        const response = await axios({
+          method: 'GET',
+          url: attachmentUrl,
+          responseType: 'stream',
+        });
+        await sendMessengerMessage(userId, page, null);
+        await pipeline(response.data, fs.createWriteStream(tempFilePath));
+
+        // Transcribe the audio file
+        await sendMessengerMessage(userId, page, null);
+        const transcription = await openai.audio.transcriptions.create({
+          file: fs.createReadStream(tempFilePath),
+          model: 'whisper-1',
+        });
+        messageEvent.message = transcription;
+        const agentReplies = await submitAgentReplyToMessage(messageEvent);
+        logJ("agentReplies:", agentReplies);
+
+        await speakToFile(agentReplies[0].text, tempFilePath);
+        log("audio file created:" + tempFilePath);
+
+        await sendMessengerAudioMessage(page.token, userId, tempFilePath);
       } catch (error) {
-          console.error('Error:', error.message);
+        console.error('Error during transcription:', error);
+      } finally {
+        // Clean up: delete the temporary file
+        fs.unlinkSync(tempFilePath);
       }
-
     }
+  }
+}
 
-    response = {
-      'attachment': {
-        'type': 'template',
-        'payload': {
-          'template_type': 'generic',
-          'elements': [{
-            'title': 'Is this the right picture?',
-            'subtitle': 'Tap a button to answer.',
-            'image_url': attachmentUrl,
-            'buttons': [
-              {
-                'type': 'postback',
-                'title': 'Yes!',
-                'payload': 'yes',
-              },
-              {
-                'type': 'postback',
-                'title': 'No!',
-                'payload': 'no',
-              }
-            ],
-          }]
-        }
-      }
-    };
+async function speakToFile(text, file) {
+  const mp3 = await openai.audio.speech.create({
+    model: "tts-1",
+    voice: "alloy",
+    input: text,
+  });
+  console.log(file);
+  const buffer = Buffer.from(await mp3.arrayBuffer());
+  await fs.promises.writeFile(file, buffer);
+}
 
-    // Send the response message
-    callSendAPI(webhookEvent, response);
+async function sendMessengerAudioMessage(pageAccessToken, recipientId, audioFilePath) {
+  const readStream = fs.createReadStream(audioFilePath);
+  const messageData = new FormData();
+  messageData.append('recipient', '{id:' + recipientId + '}');
+  messageData.append('message', '{attachment :{type:"audio", payload:{}}}');
+  messageData.append('filedata', readStream);
+  const response = await axios.post('https://graph.facebook.com/v2.6/me/messages?access_token=' + pageAccessToken, messageData, {
+    headers: messageData.getHeaders()
+  });
 }
 
 
@@ -855,7 +881,7 @@ async function submitAgentReplyToPostOrComment(userInput, pageId, posterId, post
   const userId = 0;
   try {
     const page = await getPageConfig(pageId);
-    sendMessengerMessage(userId, page, null);
+    await sendMessengerMessage(userId, page, null);
     const userConfig = await getUserConfig(pageId, 0);
     // const personas = await getPersonas(pageId);
     // let personaId = userConfig.personaId;
@@ -926,10 +952,6 @@ async function submitAgentReplyToPostOrComment(userInput, pageId, posterId, post
 
     }
   } catch (error) {
-    // if error 400, thread is busy, then put in the queue
-    if (error) {
-
-    }
     console.error(`An error occurred: ${error}`);
     return "I'm sorry, but an error occurred while processing your request.";
   }
@@ -1133,110 +1155,4 @@ function wait(duration) {
 }
 
 
-const ai_host = {
-  admins : [], // list of admins (user id: fb, ig, telegtam, viber). ex: aiHOst.admin['']
-  keys : {
-    openai : [], // ex: aiHost.keys.openai['xyz123'] = 'xyz123';
-    aihost : [],
-    flowise : [], // reserved
-    botpress : [], // reserved
-    mistral : [] // resserved
-  },
-  assistants : [],
-  default_assistant : {
-    key_name : '', // openai, aihost, flowise, ...
-    key_value : '', // api key
-    assistant_id : '', //
-  },
-  access : 'none', // "none", "all", "invited_only" "facebook", "instagram", "whatsapp", "telegram", "slack", "viber"
-  users : [], //  userid
-};
-
-function createAiHost(userId, keyName, keyValue) {
-  let aiHost = {
-    admins : [userId], // list of admins (user id: fb, ig, telegtam, viber). ex: aiHOst.admin['']
-    keys : {
-      openai : [], // ex: aiHost.keys.openai['xyz123'] = 'xyz123';
-      aihost : [],
-      flowise : [], // reserved
-      botpress : [], // reserved
-      mistral : [], // resserved
-    },
-    assistants : [],
-    default_assistant : {
-      key : {
-        name : key_name, // openai, aihost, flowise, ...
-        value : key_value, // api key
-      },
-      assistant : {
-        id : '',
-        name : '',
-      }
-    },
-    access : 'none', // "none", "all", "invited_only" "facebook", "instagram", "whatsapp", "telegram", "slack", "viber"
-    users : [], //  userid
-  };
-
-  if (aiHost.keys.hasOwnProperty(keyName)) {
-    aiHost.keys[keyName][0] = keyValue;
-  } else {
-    throw new Error('Invalid keyName');
-  }
-}
-
-function addAiHost(aiHost, keyName, keyValue) {
-  if (aiHost.keys.hasOwnProperty(keyName)) {
-    let keys = aiHost.keys[keyName];
-    if (!keys.includes(keyValue)) {
-      keys.push(keyValue);
-    }
-  } else {
-    throw new Error('Invalid keyName');
-  }
-}
-
-function removeAiHost(aiHost, keyName, keyValue) {
-  if (aiHost.keys.hasOwnProperty(keyName)) {
-    let keys = aiHost.keys[keyName];
-    if (keys.includes(keyValue)) {
-      aiHost.keys[keyName] = keys.filter(item => item !== keyValue);
-    }
-  } else {
-    throw new Error('Invalid keyName');
-  }
-}
-
-function getAssistantsWithKeyName(keyName, keyValue) {
-  if (keyName === 'openai') {
-    // TODO: cosider cashing
-    // Create an OpeenAI instance and call openai API to list assistants
-    const openai = new OpenAI({ apiKey: key_value });
-    const assistants = awaitopenai.beta.assistants.list({
-      order: "desc",
-      limit: "100",
-    });
-    for (let i = 0; i < myAssistants.body.data.length; i++) {
-      const assistant = myAssistants.body.data[i];
-      log(JSON.stringify(assistant));
-      assistants.push({
-        key : {
-          name : keyName,
-          value : keyValue,
-        },
-        assistant : {
-          id : assistant.id,
-          name :
-        }
-      });
-    }
-  } else if (keyName === 'aihost') {
-
-  }
-}
-
-function listAssistants(aiHost, userId) {
-  if (aiHost.admins.include(usserId)) {
-    const assistants = [];
-
-  }
-}
+// curl -F "url=https://us-west1-newi-1694530739098.cloudfunctions.net/webhook-2/telegramBot" https://api.telegram.org/bot6360663950:AAHg6WmYMOVVdg37nqE6RCN6QhZddVZ8S_Q/setWebhook

@@ -408,3 +408,7 @@ curl -i -X GET "https://graph.facebook.com/v18.0/113140591892347/subscribed_apps
 
 curl -i -X POST "https://graph.facebook.com/v18.0/144905368686649/subscribed_apps?subscribed_fields=messages,feed&access_token=EAAMsJzIR32YBO7858IU29gpE6PKxYqy8VP4PmBlz0ARGjQtOSProm31JUZAzm1FkVjFZBh3DFZBr1Sy8VjoctazsCKdm5uXPpXm2xyRDhAsExeASGl1bgr4vyuzyyfH5DpADms2ZBlkxl9JNr5rygdrvfIZCM9cwJdDjtgaFNXGDZBzz4eq387hyko0TML"
 curl -i -X POST "https://graph.facebook.com/v18.0/144905368686649/subscribed_apps
+
+
+curl localhost:8080 -X POST -H "Content-Type: application/json" -d '
+{"object":"page","entry":[{"id":"210267618829827","time":1704412343829,"messaging":[{"sender":{"id":"6814480935348298"},"recipient":{"id":"210267618829827"},"timestamp":1704412343378,"message":{"mid":"m_PnTpQagEWs0IZLGsE44xwqZMpLOqXnm36cL6FO92UZ4201NfQl5D2vHgpp8QA8GqlHpz0qTBO9Z0LKyEJRXOQg","attachments":[{"type":"audio","payload":{"url":"https://cdn.fbsbx.com/v/t59.3654-21/416893449_1965563693825250_6730614417284512754_n.wav/audio_clip.wav?_nc_cat=104&ccb=1-7&_nc_sid=d61c36&_nc_ohc=jDATB7s9FQMAX_c1Z5u&_nc_ht=cdn.fbsbx.com&oh=03_AdT1xRdeuoWdAxtzHf6cvmP-SaBAeNEtuzX384-sVIvcFw&oe=6598C299"}}]}}]}]}'
