@@ -1,5 +1,14 @@
 # webhook1
 
+[Install the Google Cloud CLI](https://cloud.google.com/sdk/docs/install)
+* [Download tar](https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-cli-458.0.1-darwin-arm.tar.gz)
+* copy to ~
+* untar 
+
+     ./google-cloud-sdk/install.sh
+
+     ./google-cloud-sdk/bin/gcloud init
+
 [Create a 2nd gen Cloud Function by using the Google Cloud CLI](https://cloud.google.com/functions/docs/create-deploy-gcloud)
 
 [Run functions with Functions Framework](https://cloud.google.com/functions/docs/running/function-frameworks)
