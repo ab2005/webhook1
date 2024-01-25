@@ -1,3 +1,6 @@
+
+[GPT AutoExpert](https://chat.openai.com/g/g-LQHhJCXhW-autoexpert-chat}
+
 Before improving the provided prompt, let's review what constitutes an "improved prompt":
 
 1. **Clarity**: The prompt should be clear and straightforward, avoiding any ambiguous or vague language.
