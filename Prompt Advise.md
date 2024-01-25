@@ -1,5 +1,4 @@
-
-[GPT AutoExpert](https://chat.openai.com/g/g-LQHhJCXhW-autoexpert-chat}
+https://chat.openai.com/g/g-ZdfrSRAyo-alphanotes-gpt
 
 Before improving the provided prompt, let's review what constitutes an "improved prompt":
 
