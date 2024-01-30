@@ -10,14 +10,25 @@ let APIcall = async () => {
     const openai = new OpenAI({
       apiKey: process.env.OPENAI_API_KEY
     });
+    console.log(`key=${process.env.OPENAI_API_KEY}`);
 
-    const assistant = await openai.beta.assistants.create({
-      name: "Math Tutor",
-      instructions: "You are a personal math tutor. Write and run code to answer math questions.",
-      tools: [{ type: "code_interpreter" }],
-      model: "gpt-4-1106-preview"
+    const myAssistants = await openai.beta.assistants.list({
+      order: "desc",
+      limit: "100",
     });
-    console.log(JSON.stringify(assistant));
+
+    for (let i = 0; i < myAssistants.body.data.length; i++) {
+      const assistant = myAssistants.body.data[i];
+      console.log(JSON.stringify(assistant, null, 2));
+    }
+    // const assistant = await openai.beta.assistants.create({
+    //   name: "Math Tutor",
+    //   description:  "This assistant will help you solve math problems.",
+    //   instructions: "You are a personal math tutor. Write and run code to answer math questions.",
+    //   tools: [{ type: "code_interpreter" }],
+    //   model: "gpt-4-1106-preview"
+    // });
+    // console.log(JSON.stringify(assistant));
 
 
     const messageList = [{

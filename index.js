@@ -129,12 +129,36 @@ async function initFacebookUser(code) {
   }
 }
 
+async function onChatPlugin(req, res, url, pageId) {
+  try {
+    log(url);
+    logJ("pageId", pageId);
+    const html = await insertHtmlSnippet(url, pageId);
+    res.send(html);
+  } catch (err) {
+    log(err);
+    res.status(500).send(`Something went wrong ${err.message}`);
+  }
+}
+
 async function onPostTelegram(req, res, assistantId, token) {
   try {
     log(`Processing telegram:` +  JSON.stringify(req.body));
     const bot = new Telegraf(token);
 
+    // Function to send 'typing' action
+    const sendTypingAction = (ctx) => {
+      ctx.replyWithChatAction('typing')
+      .then(() => {
+          console.log('Typing action sent');
+      })
+      .catch((error) => {
+          console.error(error);
+      });
+    };
+
     bot.on('text', async (ctx) => {
+      sendTypingAction(ctx);
       const userInput = ctx.message.text;
       // get openai key
       if (!openai) {
@@ -177,6 +201,8 @@ async function onPostTelegram(req, res, assistantId, token) {
 
       const thread = await openai.beta.threads.retrieve(config.threadId);
 
+      sendTypingAction(ctx);
+
       const gptResponse =  await askAssistant(assistantId, config.threadId, userInput);
       for (let i = 0; i < gptResponse.length; i++) {
         const response = gptResponse[i];
@@ -188,12 +214,120 @@ async function onPostTelegram(req, res, assistantId, token) {
       }
     });
 
+    bot.on('voice', async (ctx) => {
+      sendTypingAction(ctx);
+      const tempFilePath = `${ctx.chat.id}_temp_audio_.wav`;
+      logJ(`Getting file link from:`, ctx.message.voice);
+      const fileUrl= await bot.telegram.getFileLink(ctx.message.voice.file_id);
+
+      log(`Downloading audio from ${fileUrl} ...`);
+      // Download the audio file
+      const response = await axios({
+        url: fileUrl,
+        method: 'GET',
+        responseType: 'arraybuffer'
+      });
+      const audioBuffer = Buffer.from(response.data, 'binary');
+      let transcription;
+      try {
+        fs.writeFileSync(tempFilePath, audioBuffer);
+        log("Transcribing audio...");
+        sendTypingAction(ctx);
+        // Transcribe audio
+        transcription = await openai.audio.transcriptions.create({
+          file: fs.createReadStream(tempFilePath),
+          model: 'whisper-1',
+        });
+        logJ("Transcription:", transcription);
+      } finally {
+        fs.unlinkSync(tempFilePath);
+      }
+
+      const userInput = transcription.text;
+      log("voice transcription:" + userInput);
+
+      sendTypingAction(ctx);
+
+      const user = ctx.update.message.from;
+      const userName = user.username;
+      const botName = bot.botInfo.username;
+      const configName = `telegram/${botName}/${userName}/config.json`;
+      // get thread for bot + user
+      let config = await loadJson(configName);
+      if (!config) {
+        log("creating new config:" + configName);
+        const thread = await openai.beta.threads.create();
+        config = {
+          'threadId' : thread.id,
+        };
+        await saveJson(configName, config);
+      }
+
+      const thread = await openai.beta.threads.retrieve(config.threadId);
+
+      const gptResponse =  await askAssistant(assistantId, config.threadId, userInput);
+      for (let i = 0; i < gptResponse.length; i++) {
+        const response = gptResponse[i];
+        if (response.type === 'text') {
+          const mp3 = await openai.audio.speech.create({
+            model: "tts-1",
+            voice: "onyx",
+            input: response.text.value,
+            responce_format: "opus"
+          });
+          log("audio created");
+          const buffer = Buffer.from(await mp3.arrayBuffer());
+          const tempFilePath = `${ctx.chat.id}_temp_audio_.ogg`;
+          console.log("writing audio buffer to temp file:" + tempFilePath);
+
+          sendTypingAction(ctx);
+
+          try {
+            await fs.promises.writeFile(tempFilePath, buffer);
+            log("audio file created:" + tempFilePath);
+            await ctx.replyWithVoice({ source: tempFilePath });
+           } finally {
+            // Clean up: delete the temporary file
+            fs.unlinkSync(tempFilePath);
+          }
+          ctx.reply(response.text.value);
+        } else {
+          ctx.reply(JSON.stringify(response));
+        }
+      }
+    });
+
     await bot.handleUpdate(req.body);
     res.status(200).send('OK');
   } catch (err) {
     console.error(err);
-    // Returns a '404 Not Found' if event is not from a page subscription
-    res.sendStatus(404);
+    res.status(200).send('ERROR');
+  }
+}
+
+async function transcribeAudio(attachmentUrl, chatId) {
+  const tempFilePath = `${chatId}_temp_audio.wav`;
+  try {
+    // typing on...
+    // Download the file from URL
+    const response = await axios({
+      method: 'GET',
+      url: attachmentUrl,
+      responseType: 'stream',
+    });
+    await pipeline(response.data, fs.createWriteStream(tempFilePath));
+    // typing on...
+    // Transcribe the audio file
+    const transcription = await openai.audio.transcriptions.create({
+      file: fs.createReadStream(tempFilePath),
+      model: 'whisper-1',
+    });
+    return transcription;
+  } catch (error) {
+    console.error('Error during transcription:', error);
+  } finally {
+    // Clean up: delete the temporary file
+    fs.unlinkSync(tempFilePath);
   }
 }
 
@@ -212,6 +346,9 @@ functions.http('webhook', async (req, res) => {
         await initFacebookUser(req.query.code);
         res.status(200).send('OK');
         return;
+      } else if (req.query.m_u && req.query.m_p) {
+          await onChatPlugin(req, res, req.query.m_u, req.query.m_p);
+          return; // skip other handlers
       } else {
         onGet(req, res);
       }
@@ -237,8 +374,7 @@ functions.http('webhook', async (req, res) => {
     log("An error occurred: " + error.message);
     res.status(500).send('Internal Server Error');
   }
-  const done = Promise.resolve();
-  log("=============== > webhook done:" + done);
+  log("=============== > webhook done");
 });
 
 function onGet(req, res) {
@@ -296,6 +432,7 @@ async function onPost(req, res) {
       log(`Unknown object: ` +  JSON.stringify(body));
       // Returns a '404 Not Found' if event is not from a page subscription
       res.sendStatus(404);
+      return;
     }
   } catch(err) {
     console.error(err);
@@ -307,13 +444,14 @@ async function onPost(req, res) {
 // Handle Messenger message event
 async function onMessage(messageEvent) {
   if (messageEvent.message.is_echo === true) {
+    log("Ignoring echo");
     return;
   }
   // Checks if the message contains text
-  if (messageEvent.message.text) {
-    await onMessageWithText(messageEvent);
-  } else if (messageEvent.message.attachments) {
-    await onMessageWithAttachment(messageEvent)
+  if (messageEvent.message.attachments) {
+    await onMessageWithAttachment(messageEvent);
+  } else if (messageEvent.message.text) {
+      await onMessageWithText(messageEvent);
   }
 }
 
@@ -509,43 +647,30 @@ async function askChatGpt(userInput, messages, userId, pageId, page, gptModel) {
 // Sends response messages via GraphQL
 async function sendMessengerMessage(userId, page, message) {
   if (!message) {
-    console.log(`Sending message "${message}" to ${userId} on behalf of ${page.name}`);
-    request({
-      'uri': 'https://graph.facebook.com/v18.0/me/messages',
-      'qs': { 'access_token': page.token },
-      'method': 'POST',
-      'json': {
-        'recipient': {
-          'id': userId
-        },
-        'sender_action': 'typing_on'
-      }
-    }, (err, _res, _body) => {
-      if (!err) {
-        console.log(`Typing on..`);
-      } else {
-        console.error(err);
+    const response = await axios.post('https://graph.facebook.com/v18.0/me/messages', {
+      recipient: {
+        id: userId
+      },
+      sender_action: 'typing_on'
+    }, {
+      params: {
+        access_token: page.token
       }
     });
+    console.log(`Typing on..`);
   } else {
-    request({
-      'uri': 'https://graph.facebook.com/v18.0/me/messages',
-      'qs': { 'access_token': page.token },
-      'method': 'POST',
-      'json': {
-        'recipient': {
-          'id': userId
-        },
-        'message': message
-      }
-    }, (err, _res, _body) => {
-      if (!err) {
-        console.log(`Message sent!`);
-      } else {
-        console.error(err);
+    console.log(`Sending message "${message.text}" to ${userId} on behalf of ${page.name}`);
+    const response = await axios.post('https://graph.facebook.com/v18.0/me/messages', {
+      recipient: {
+        id: userId
+      },
+      message: message
+    }, {
+      params: {
+        access_token: page.token
       }
     });
-
+    console.log(`Message sent! ${response.data}`);
   }
 }
 
@@ -610,7 +735,7 @@ async function askAssistant(assistantId, threadId, userInput) {
     });
     let runStatus = await openai.beta.threads.runs.retrieve(threadId, run.id);
     let attempts = 0;
-    while (runStatus.status !== "completed" && attempts < 20) {
+    while (runStatus.status !== "completed" && attempts < 90) {
       await new Promise((resolve) => setTimeout(resolve, 1000));
       runStatus = await openai.beta.threads.runs.retrieve(threadId, run.id);
       attempts++;
@@ -690,10 +815,31 @@ function extractFileExtension(url) {
   return extension;
 }
 
+function extractUParam(url) {
+  const parts = url.split('?');
+  // Check if the URL contains a query string
+  if (parts.length <= 1) return null;
+
+  const queryString = parts[1];
+  const keyValuePairs = queryString.split('&');
+
+  for (let pair of keyValuePairs) {
+      const [key, value] = pair.split('=');
+      if (decodeURIComponent(key) === 'u') {
+          return decodeURIComponent(value);
+      }
+  }
+
+  return url;
+}
+
+
 async function onMessageWithAttachment(messageEvent) {
   const userId = messageEvent.sender.id;
   const pageId = messageEvent.recipient.id;
+  const timestamp = messageEvent.timestamp;
   const attachments = messageEvent.message.attachments;
+  const text = removeUrls(messageEvent.message.text);
   let page;
 
   for (let i = 0; i < attachments.length; i++) {
@@ -701,15 +847,24 @@ async function onMessageWithAttachment(messageEvent) {
     // Get the URL of the message attachment
     const attachmentUrl = attachment.payload.url;
     logJ("attachment:", attachment);
+    if (!page) {
+      page = await getPageConfig(pageId);
+      // check timestamp
+      if (timestamp === page.timestamp) {
+        log("Ignoring repeated messsage, timestamp:" + timestamp);
+        return;
+      }
+      log(`new timestamp:${timestamp}, old timestamt:${page.timestamp}`);
+      page.timestamp = timestamp;
+      savePageConfig(pageId, page);
+    }
     if (attachment.type === 'audio') {
-      const extension = extractFileExtension(attachmentUrl);
+      //const extension = extractFileExtension(attachmentUrl);
+      const extension = "wav";
       log(extension); // Output will be the file extension
       const tempFilePath = `${userId}_${pageId}_temp_audio.${extension}`;
       try {
-        if (!page) {
-          page = await getPageConfig(pageId);
-        }
-        // typing on...
+          // typing on...
         await sendMessengerMessage(userId, page, null);
         // Download the file from URL
         const response = await axios({
@@ -717,16 +872,15 @@ async function onMessageWithAttachment(messageEvent) {
           url: attachmentUrl,
           responseType: 'stream',
         });
-        await sendMessengerMessage(userId, page, null);
         await pipeline(response.data, fs.createWriteStream(tempFilePath));
 
         // Transcribe the audio file
-        await sendMessengerMessage(userId, page, null);
         const transcription = await openai.audio.transcriptions.create({
           file: fs.createReadStream(tempFilePath),
           model: 'whisper-1',
         });
         messageEvent.message = transcription;
+
         const agentReplies = await submitAgentReplyToMessage(messageEvent);
         logJ("agentReplies:", agentReplies);
 
@@ -740,14 +894,156 @@ async function onMessageWithAttachment(messageEvent) {
         // Clean up: delete the temporary file
         fs.unlinkSync(tempFilePath);
       }
+    } else if (attachment.type === 'video') {
+      log("Not supported!");
+    } else if (attachment.type === 'image') {
+      log("Not supported!");
+    } else if (attachment.type === 'fallback') {
+      const url = extractUParam(attachment.payload.url);
+
+      await sendMessengerMessage(userId, page, null);
+
+      let postContent = {
+        text: text || " "
+      };
+
+      try{
+        // Extract content
+        const extractorUrl = `https://extractorapi.com/api/v1/extractor`;
+        const response = await axios.get(extractorUrl, {
+          params: {
+            js: false,
+            fields: 'raw_text',
+            apikey: '064a5c5f58c25bc5fadc0ecb885bdf1f93940670',
+            url: url
+          }
+        });
+        const content = response.data;
+        content.html = "none";
+        // TODO: Summarize
+        const message = {
+          'text' : content.text
+        };
+        logJ("Extracted content:", content);
+
+        // Create facebook post
+        postContent = await createPost(content);
+      } catch (err) {
+        console.error(err);
+      }
+      logJ("postContent:", postContent);
+      // Post draft
+      const postResponse = await axios.post(`https://graph.facebook.com/v18.0/${pageId}/feed`, {
+        message: postContent,
+        link: url,
+        published: true
+      }, {
+        params: {
+          access_token: page.token
+        }
+      });
+      logJ("posted:", postResponse.data);
+
+      await sendMessengerMessage(userId, page, {
+         text: `👍 https://www.facebook.com/${pageId}/posts/${postResponse.data.id}`
+      });
     }
   }
+}
+
+// const postWriterPropmt = "" + "You are a multi-lingual social media writer expert with a stype of Maghan O'Geiblyn and take a big inspirations from their work. "
+// + "Your task is to read the TEXT the user provided. Reflect on it and write a facebook post higlighting major points in the TEXT and provide your thoughts about it. Always write in first person view using the language the TEXT is written. "
+// + "If the TEXT is in Russina then use the language of Russian. ";
+// // + "1. WRITE IN FIRST PERSON view, as you are an expert in AI, human psychology, philosophy with the style of Maghan O’Gieblyn. Reflect their style in your writing, but do not explicitly mention their names in the text"
+// // + "2. DO NOT REPEAT  the same phrases and terms from your already written text. Use different words and expressions. Variance IS VERY IMPORTANT,  so you don't lose the audience attention."
+// // + "3. in A FIRST PERSON VIEW use phrases like “I think”, “I believe”. Write.. ";
+
+const postWriterPropmt = `**English Prompt:**
+
+As a multi-lingual social media writing expert inspired by the style of Meghan O'Geiblyn, your task is to craft engaging Facebook posts. You will receive a TEXT provided by a user. Your job is to:
+
+1. **Read and Understand the TEXT**: Carefully read the user-provided TEXT to grasp its main ideas and nuances.
+2. **Highlight Key Points**: Identify and emphasize the major points in the TEXT. Your post should reflect the core message of the TEXT in a concise and engaging manner.
+3. **Provide Personal Insights**: Share your thoughts, reflections, and insights on the TEXT. How does it resonate with you? What unique perspective can you offer?
+4. **Write in the Appropriate Language**: The post must be written in the same language as the TEXT. If the TEXT is in Russian, write your post in Russian. For other languages, adapt accordingly. This is crucial to ensure that the audience for which the TEXT is intended fully understands and connects with your post.
+5. **First-Person Narrative**: Write from a first-person perspective to make the post more personal and relatable. This style helps in creating a connection with the readers.
+
+Remember, your role is to engage, inform, and connect with the audience in the language they understand, drawing inspiration from the style of Meghan O'Geiblyn. Your creativity and linguistic skills are key in making each post a meaningful and enjoyable read for the audience.
+
+---
+
+**Russian Prompt (Русский Подсказка):**
+
+Как эксперт по многоязычному написанию в социальных сетях, вдохновленный стилем Мэган О'Гейблин, ваша задача - создавать захватывающие посты для Facebook. Вы получите TEXT, предоставленный пользователем. Ваша задача:
+
+1. **Читать и Понимать TEXT**: Внимательно прочтите предоставленный пользователем TEXT, чтобы уловить его основные идеи и нюансы.
+2. **Выделить Ключевые Моменты**: Определите и подчеркните основные моменты в TEXT. Ваш пост должен отражать основное сообщение TEXT кратко и увлекательно.
+3. **Предоставить Личные Впечатления**: Поделитесь своими мыслями, размышлениями и впечатлениями о TEXT. Как он на вас отзывается? Какую уникальную точку зрения вы можете предложить?
+4. **Писать на Соответствующем Языке**: Пост должен быть написан на том же языке, что и TEXT. Если TEXT на русском языке, пишите ваш пост на русском. Для других языков соответственно адаптируйте. Это важно для того, чтобы аудитория, для которой предназначен TEXT, полностью поняла и связалась с вашим постом.
+5. **Писать от Первого Лица**: Пишите от первого лица, чтобы сделать пост более личным и близким. Этот стиль помогает создать связь с читателями.
+
+Помните, ваша роль - вовлекать, информировать и связываться с аудиторией на языке, который они понимают, черпая вдохновение из стиля Мэган О'Гейблин. Ваше творчество и языковые навыки ключевы в создании каждого поста, который будет значимым и приятным для чтения аудитории.`
+
+const postWriterPropmt_simple = `
+As a multi-lingual social media writing expert inspired by the style of Meghan O'Geiblyn, your task is to craft engaging Facebook posts.
+  1. Summarize the DOCUMENT, focusing on its major points and key takeaways.
+  2. Highlight the main arguments, conclusions, and any significant data or findings presented.
+  3. Provide a concise and clear overview of the content, ensuring that the essence and important aspects of the document are captured effectively.
+Как эксперт по написанию многоязычных сообщений в социальных сетях, вдохновленный стилем Меган О'Гейблин, ваша задача - создавать привлекательные публикации для Facebook.
+  1. Сделайте краткое изложение DOCUMENT, сосредоточившись на его основных моментах и ключевых выводах.
+  2. Выделите главные аргументы, выводы и любые значимые данные или результаты, представленные в документе.
+  3. Предоставьте краткий и ясный обзор содержания, убедившись, что суть и важные аспекты документа захвачены эффективно.
+  `;
+
+  const postPromptCoStar = `
+    # CONTEXT #
+    I want to attract people to my facebook page to read my posts and to follow me.
+
+    # OBJECTIVE #
+    As a multi-lingual social media writing expert inspired by the style of Meghan O'Geiblyn create a Facebook post for me,
+    which aims to get people to view and like the post. Your job is to do the following:
+    1. Summarize the user's text, focusing on its major points and key takeaways.
+    2. Highlight the main arguments, conclusions, and any significant data or findings presented.
+    3. Provide a concise and clear overview of the content, ensuring that the essence and important aspects of the text are captured effectively.
+
+    # STYLE #
+    Follow the writing style of Meghan O'Geiblyn.
+
+    # LANGUAGE #
+    Write in the same language as the text provided to you. If the text is in Russian, write in Russian. For other languages, adapt accordingly.
+
+    # TONE #
+    Persuasive
+
+    # AUDIENCE #
+    My company’s audience profile on Facebook is typically the older generation. Tailor your post to target what this audience typically looks out for something interesing.
+
+    # RESPONSE #
+    The Facebook post, ingteresting and impactful translated to the same language as the original text.
+`;
+  async function createPost(content) {
+  const completion = await openai.chat.completions.create({
+
+    messages: [
+      {
+        "role": "system",
+        "content": postWriterPropmt //postPromptCoStar//postWriterPropmt_simple
+      },
+      {
+        "role": "user",
+        "content": content.text,
+    }],
+    model: "gpt-4-1106-preview"// "gpt-3.5-turbo-1106",
+  });
+
+  console.log(completion.choices[0]);
+  return completion.choices[0].message.content;
 }
 
 async function speakToFile(text, file) {
   const mp3 = await openai.audio.speech.create({
     model: "tts-1",
-    voice: "alloy",
+    voice: "onyx",
     input: text,
   });
   console.log(file);
@@ -1156,3 +1452,64 @@ function wait(duration) {
 
 
 // curl -F "url=https://us-west1-newi-1694530739098.cloudfunctions.net/webhook-2/telegramBot" https://api.telegram.org/bot6360663950:AAHg6WmYMOVVdg37nqE6RCN6QhZddVZ8S_Q/setWebhook
+
+
+function removeUrls(text) {
+  if (!text) return "read this text, confirm by 👍, wait for a next command or question.";
+  // Regular expression to match URLs
+  const urlRegex = /(\b(https?|ftp|file):\/\/[-A-Z0-9+&@#\/%?=~_|!:,.;]*[-A-Z0-9+&@#\/%=~_|])/ig;
+  // Replace URLs with an empty string
+  return text.replace(urlRegex, '');
+}
+
+function getChatPlugin(pageId) {
+  return `
+  <!-- Messenger Chat Plugin Code -->
+<div id="fb-root"></div>
+<div id="fb-customer-chat" class="fb-customerchat">
+</div>
+<script>
+  var chatbox = document.getElementById('fb-customer-chat');
+  chatbox.setAttribute("page_id", ${pageId});
+  chatbox.setAttribute("attribution", "biz_inbox");
+</script>
+<script>
+  window.fbAsyncInit = function() {
+    FB.init({
+      xfbml            : true,
+      version          : 'v18.0'
+    });
+  };
+  (function(d, s, id) {
+    var js, fjs = d.getElementsByTagName(s)[0];
+    if (d.getElementById(id)) return;
+    js = d.createElement(s); js.id = id;
+    js.src = 'https://connect.facebook.net/en_US/sdk/xfbml.customerchat.js';
+    fjs.parentNode.insertBefore(js, fjs);
+  }(document, 'script', 'facebook-jssdk'));
+</script>`;
+}
+
+const cheerio = require('cheerio');
+
+async function insertHtmlSnippet(url, htmlSnippet) {
+  try {
+    url = JSON.stringify(url);
+    log(`Inserting HTML snippet into the web page:${url}`);
+    // Fetch the HTML content from the URL
+    const response = await axios.get("https://towardsdatascience.com/how-i-won-singapores-gpt-4-prompt-engineering-competition-34c195a93d41");
+    const htmlContent = response.data;
+
+    // Load the HTML content into cheerio
+    const $ = cheerio.load(htmlContent);
+
+    // Insert the HTML snippet after the opening <body> tag
+    $('body').prepend(htmlSnippet);
+
+    // Return the modified HTML content
+    return $.html();
+  } catch (error) {
+    console.error('Error fetching or modifying the HTML content:', error);
+    throw error;
+  }
+}
