@@ -28,6 +28,13 @@ var openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
 
+function generateShortUID() {
+  var timestamp = new Date().getTime();
+  var base36Timestamp = timestamp.toString(36);
+  var randomString = Math.random().toString(36).substring(2, 8);
+  return base36Timestamp + randomString;
+}
+
 // ===== Facebook login callback =====
 async function initFacebookUser(code) {
   // Exchange code for short-lived token
@@ -69,54 +76,52 @@ async function initFacebookUser(code) {
   log('User ID:' + userId);
 
   // Store user ID and access token
-  const config = {
-    'userId': userId,
-    'accessToken': longLivedToken,
-  };
-  await saveJson(`users/${userId}/config`, config);
+  var config = await loadJson(`users/${userId}/config`, config) || {};
+  config.userId = userId;
+  config,accessToken = longLivedToken;
+  if (!config.page_password) {
+    config.page_password = generateShortUID();
+  }
+  logJ(`Saving user config...`, config);
+  saveJson(`users/${userId}/config`, config);
 
-
-  const assistants = await openai.beta.assistants.list({
-    order: "desc",
-    limit: "100",
-  });
-  // Store user pages tokens and names
+  // List pages
   const pagesResponse = await axios.get('https://graph.facebook.com/v18.0/me/accounts', {
     params: {
       access_token: longLivedToken,
     }
   });
   const pages = pagesResponse.data.data;
+  let pagesList = '';
+  const pagePassword = config.page_password;
+  // Store page info for each page.
   for (let i = 0; i < pages.length; i++) {
     const page = pages[i];
     console.log('Page ID:', page.id);
     console.log('Page Name:', page.name);
-    console.log('Page Access Token:', page.access_token);
-    let assistantId = "asst_4uEa9UdJRJgus4bfcXBkAPn9";
-    // search for page name match
-    for (let i = 0; i < assistants.body.data.length; i++) {
-      const ass = assistants.body.data[i];
-      if (ass.name === page.name) {
-        assistantId = ass.id;
-        log(`Found page: ${page.name}, assisgning assistant: ${ass.id}`);
-      }
-  }
 
-    if (page.id === "210267618829827") {
-      assistantId = "asst_hiimHnR1fu5X9loUaUi000ao";
+    var pageConfig = await loadJson(`pages/${page.id}/config`);
+    if (!pageConfig) {
+      pageConfig = {
+        pageID: page.id,
+        name : page.name,
+        token: page.access_token,
+        admin_id: userId,
+        page_password: pagePassword
+        // more to add..
+      };
+    } else {
+      pageConfig.pageID = page.id;
+      pageConfig.name = page.name;
+      pageConfig.token = page.access_token;
+      pageConfig.admin_id = userId;
+      pageConfig.page_password = pagePassword;
     }
-    const pageConfig = {
-      'pageID': page.id,
-      'name' : page.name,
-      'token': page.access_token,
-      'assistantId' : assistantId
-    };
     log(`Saving page pages/${page.id}/config...`);
-    await saveJson(`pages/${page.id}/config`, pageConfig);
+    saveJson(`pages/${page.id}/config`, pageConfig);
 
     // Subscribe
     const subscriptions = 'email,feed,group_feed,inbox_labels,mention,message_reactions,messages,';
-    log("url:" + `https://graph.facebook.com/v18.0/${page.id}/subscribed_apps`);
     log("subscriptions:" + subscriptions);
     const subscribedResponse = await axios.post(`https://graph.facebook.com/v18.0/${page.id}/subscribed_apps`, null, {
       params: {
@@ -126,7 +131,13 @@ async function initFacebookUser(code) {
     });
     const subscriptionReply = JSON.stringify(subscribedResponse.data);
     log(`Subscribe responce: ${subscriptionReply}`);
+    // add page link
+    pagesList += getPageSnippet(page.id, page.name, pageConfig.openai_key, pageConfig.assistantId, pagePassword);
   }
+  log(pagesList);
+  return loginPage.replace('<!-- Add more links here -->', pagesList)
+   .replace("$PAGE_PASSWORD", pagePassword)
+   .replace("$PAGE_PASSWORD", pagePassword);
 }
 
 async function onChatPlugin(req, res, url, pageId) {
@@ -141,6 +152,7 @@ async function onChatPlugin(req, res, url, pageId) {
   }
 }
 
+
 async function onPostTelegram(req, res, assistantId, token) {
   try {
     log(`Processing telegram:` +  JSON.stringify(req.body));
@@ -148,18 +160,12 @@ async function onPostTelegram(req, res, assistantId, token) {
 
     // Function to send 'typing' action
     const sendTypingAction = (ctx) => {
-      ctx.replyWithChatAction('typing')
-      .then(() => {
-          console.log('Typing action sent');
-      })
-      .catch((error) => {
-          console.error(error);
-      });
+      ctx.replyWithChatAction('typing');
     };
 
     bot.on('text', async (ctx) => {
       sendTypingAction(ctx);
-      const userInput = ctx.message.text;
+      var userInput = ctx.message.text;
       // get openai key
       if (!openai) {
         console.error(`No key found for ${pageId}, try to get one...`);
@@ -201,16 +207,33 @@ async function onPostTelegram(req, res, assistantId, token) {
 
       const thread = await openai.beta.threads.retrieve(config.threadId);
 
-      sendTypingAction(ctx);
+      const isGroup = ctx.update.message.chat.type === 'group';
+      const hasMentioned = userInput.toLowerCase().includes(botName.toLowerCase());
+      if (isGroup && !hasMentioned) {
+        // Do not reply, just listen for messages in group.
+        userInput = "Reply \"OK\" after you read this message";
+      }
 
-      const gptResponse =  await askAssistant(assistantId, config.threadId, userInput);
-      for (let i = 0; i < gptResponse.length; i++) {
-        const response = gptResponse[i];
-        if (response.type === 'text') {
-          ctx.reply(response.text.value);
-        } else {
-          ctx.reply(JSON.stringify(response));
+      let gptResponse;
+      try {
+        gptResponse =  await askAssistant(assistantId, config.threadId, userInput);
+        if (isGroup && !hasMentioned) {
+          // Do not message, just listen for messages in group.
+          gptResponse = [];
         }
+        for (let i = 0; i < gptResponse.length; i++) {
+          const response = gptResponse[i];
+          if (response.type === 'text') {
+            log("replying.. ");
+            await ctx.reply(response.text.value,{ parse_mode: 'Markdown' });
+            log("replied");
+          } else {
+            await ctx.reply(JSON.stringify(response));
+          }
+        }
+      } catch(err) {
+        console.error(err);
+        await ctx.reply(err.message)
       }
     });
 
@@ -298,10 +321,9 @@ async function onPostTelegram(req, res, assistantId, token) {
     });
 
     await bot.handleUpdate(req.body);
-    res.status(200).send('OK');
   } catch (err) {
+    log(`Error while processing telegram: ${err}`);
     console.error(err);
-    res.status(200).send('ERROR');
   }
 }
 
@@ -332,6 +354,7 @@ async function transcribeAudio(attachmentUrl, chatId) {
 }
 
 functions.http('webhook', async (req, res) => {
+  log("<<<<<<<< webhook");
   try {
     // initialization
     if (!(await loadConfig())) {
@@ -343,8 +366,8 @@ functions.http('webhook', async (req, res) => {
       log('GET path:'+ req.path);
       log('GET query:'+ JSON.stringify(req.query));
       if (req.query.code) {
-        await initFacebookUser(req.query.code);
-        res.status(200).send('OK');
+        const login = await initFacebookUser(req.query.code);
+        res.status(200).send(login);
         return;
       } else if (req.query.m_u && req.query.m_p) {
           await onChatPlugin(req, res, req.query.m_u, req.query.m_p);
@@ -352,29 +375,29 @@ functions.http('webhook', async (req, res) => {
       } else {
         onGet(req, res);
       }
-  } else if (req.method === 'POST') {
-      log('POST url:'+ req.url);
-      log('POST path:'+ req.path);
-      log('POST path:'+ JSON.stringify(req.query));
-
-
-      if (req.query.t_a || req.query.t_t) {
-        await onPostTelegram(req, res, req.query.t_a, req.query.t_t);
-        return; // skip other handlers
+    } else if (req.method === 'POST') {
+      logJ("<<<<<============ POST:", req.body);
+      try {
+        if (req.query.t_a || req.query.t_t) {
+            await onPostTelegram(req, res, req.query.t_a, req.query.t_t);
+        } else if (req.body.object === 'page') {
+            await onPost(req, res);
+        } else if (req.body.object === 'instagram') {
+          logJ("Instagram TODO:", req.body);
+        } else {
+            log("Unsupported object: " + JSON.stringify(req.body));
+        }
+      } catch (er) {
+        log(`Error while prosessing POST: ${er}`);
       }
-
-      if (req.body.object === 'page') {
-        await onPost(req, res);
-      } else {
-        log("Unsupported object: " + JSON.stringify(req.body));
-        res.status(400).send('Bad Request');
-      }
+      log("POST done! =======>>>>>`");
+      res.status(200).send('EVENT_RECEIVED');
     }
   } catch (error) {
     log("An error occurred: " + error.message);
-    res.status(500).send('Internal Server Error');
+    res.status(200).send('Internal Server Error');
   }
-  log("=============== > webhook done");
+  log("webhook done >>>>>>>>>");
 });
 
 function onGet(req, res) {
@@ -403,7 +426,6 @@ function onGet(req, res) {
 }
 
 async function onPost(req, res) {
-  logJ("============ POST:", req.body);
   try {
     let body = req.body;
     // Checks if this is an event from a page subscription
@@ -411,15 +433,9 @@ async function onPost(req, res) {
       for (let i = 0; i < body.entry.length; i++) {
         const entry = body.entry[i];
         if (entry.changes) {
-          if (!openai) {
-            // TODO: ask for key
-            console.error("Key not found!");
-          } else {
-            replyToChanges(entry.changes, entry.id);
-          }
+          await replyToChanges(entry.changes, entry.id);
         } else {
           let messageEvent = (entry.messaging || entry.standby )[0];
-//          log("Processing message event:" + JSON.stringify(messageEvent));
           // Check if the event is a message or postback and generate a response
           if (messageEvent.message) {
             await onMessage(messageEvent);
@@ -430,15 +446,10 @@ async function onPost(req, res) {
       }
     } else {
       log(`Unknown object: ` +  JSON.stringify(body));
-      // Returns a '404 Not Found' if event is not from a page subscription
-      res.sendStatus(404);
-      return;
     }
   } catch(err) {
     console.error(err);
   }
-  log("=========== POST done!");
-  res.status(200).send('EVENT_RECEIVED');
 }
 
 // Handle Messenger message event
@@ -465,52 +476,154 @@ async function onMessageWithText(messageEvent) {
   await submitAgentReplyToMessage(messageEvent);
 }
 
-/*
-onPost
-    onMessage
-        onMessageWithText
-            submitAgentReplyToMessage
-                askChatGpt
-                    sendMessengerMessage
-*/
+async function sendMessengerMessageText(recipientId, page, text) {
+  await sendMessengerMessage(recipientId, page, {text:text});
+}
+
 // Submit for processing reply for user message
 async function submitAgentReplyToMessage(messageEvent, skipReply) {
   const userId = messageEvent.sender.id;
   const pageId = messageEvent.recipient.id;
   let userInput= messageEvent.message.text;
 
-
   const page = await getPageConfig(pageId);
+
+  if (!page) {
+    log("No page config found for " + pageId);
+    return
+  }
+
+  // ask for key
+  if (userInput.startsWith("/key")) {
+    const password = userInput.split(" ")[1].trim();
+    log(`Checking password ${password}`);
+    if (!password) {
+      await sendMessengerMessageText(userId, page, "Password missing!");
+      return;
+    }
+    if (password !== page.page_password) {
+      log(`Wrong password ${password} vs ${page.page_password}`);
+      await sendMessengerMessageText(userId, page, "Wrong password!");
+      return;
+    }
+    const key = userInput.split(" ")[2].trim();
+    if (!key) {
+      log(`Missing OpoenAI key!`);
+      await sendMessengerMessageText(userId, page, "Missing OpenAI key!");
+      return;
+    }
+
+    log("Setting openapi key:" + key);
+    try {
+      const openai = new OpenAI({
+        apiKey: key
+      });
+      const assistants = await openai.beta.assistants.list({
+        order: "desc",
+        limit: "100",
+      });
+      var assistantId;
+      var assistantsList = "";
+      for (let i = 0; i < assistants.body.data.length; i++) {
+        const ass = assistants.body.data[i];
+        if (ass.name === page.name) {
+          log(`Found match: ${ass.id} ${page.name}`)
+          assistantId = ass.id;
+        } else {
+          log(`${ass.id} ${ass.name} != ${page.name}`)
+          assistantsList += `${ass.id} ${ass.name}\n`;
+        }
+      }
+      var reply = "";
+      if (assistantId) {
+        reply = `Found assistant with matching name: ${assistantId} ${page.name}.\n`;
+        log(`Your assistant id: ${assistantId}`);
+        page.assistant_id = assistantId;
+      } else {
+        reply += `Available Assistants:\n${assistantsList}.\n You can set Assistant by /assistant <password> <assistant-id>`;
+      }
+      page.openai_key = key;
+      savePageConfig(pageId, page);
+      await sendMessengerMessageText(userId, page, reply);
+      return;
+    } catch(err) {
+      // Wrong key
+      console.log(err);
+      await sendMessengerMessageText(userId, page, "Wrong OpenAI key!");
+      return
+    }
+  } else if (userInput.startsWith("/assistant ")) {
+    if (!page.openai_key) {
+      await sendMessengerMessageText(userId, page, "Please, provide openai key!  /key <password> <openai-key>`");
+      return;
+    }
+    const password = userInput.split(" ")[1].trim();
+    if (password !== page.page_password) {
+      await sendMessengerMessageText(userId, page, "Wrong password!");
+      return;
+    }
+    const assistantId = userInput.split(" ")[2].trim();
+    if (!assistantId) {
+      await sendMessengerMessageText(userId, page, "Assistant ID is required!");
+      return;
+    }
+    try {
+      const openai = new OpenAI({
+        apiKey: page.openai_key
+      });
+      const assistants = await openai.beta.assistants.list({
+        order: "desc",
+        limit: "100",
+      });
+      var isAssistantIdValid;
+      for (let i = 0; i < assistants.body.data.length; i++) {
+        const ass = assistants.body.data[i];
+        if (ass.id === assistantId) {
+          isAssistantIdValid = ass.name;
+        }
+      }
+      if (!isAssistantIdValid) {
+        await sendMessengerMessageText(userId, page, "Invalid assistant id!");
+        return;
+      }
+      page.assistant_id = assistantId;
+      savePageConfig(pageId, page);
+      await sendMessengerMessageText(userId, page, `${isAssistantIdValid} will be your assistant`);
+      return;
+    } catch(err) {
+      // Wrong key
+      console.log(err);
+      await sendMessengerMessageText(userId, page, "Wrong OpenAI key! Provide another one.");
+      return;
+    }
+  } else {
+    if (!page.openai_key) {
+      log(`Ignoring message to a page ${pageId} without openapi key:`)
+      return;
+    }
+    if (!page.assistant_id) {
+      log(`Ignoring message to a page ${pageId} without assistant:`)
+      return;
+    }
+  }
+
+  const timestamp = messageEvent.timestamp;
+  // check timestamp
+  // if (timestamp < page.timestamp) {
+  //   log(`Timestamp ${timestamp} is older than last ${page.timestamp}`);
+  //   return
+  // }
+  // if (timestamp === page.timestamp) {
+  //   log("Ignoring repeated messsage, timestamp:" + timestamp);
+  //   log(`new timestamp:${timestamp}, old timestamt:${page.timestamp}`);
+  //   return;
+  // }
+  page.timestamp = timestamp;
+  savePageConfig(pageId, page);
   await sendMessengerMessage(userId, page, null);
   const userConfig = await getUserConfig(pageId, userId);
   const peersonaType = 'assistant';
   try {
-    if (!openai) {
-      console.error(`No key found for ${pageId}, try to get one...`);
-      try {
-        const ai = new OpenAI({
-          apiKey: userInput
-        });
-        myAssistants = await ai.beta.assistants.list({
-          order: "desc",
-          limit: "100",
-        });
-        for (let i = 0; i < myAssistants.body.data.length; i++) {
-          const assistant = myAssistants.body.data[i];
-          log(JSON.stringify(assistant));
-        }
-        // TODO: save personas
-        page.key = userInput;
-        savePageConfig(pageId, page);
-        openai = ai;
-      } catch (err) {
-        console.error(err);
-        log(`Invalid key: ${userInput}`);
-        sendMessengerMessage(userId, page, `Invalid key: ${userInput}`);
-        return;
-      }
-    }
-
     if (peersonaType === 'chat') {
       // load recent messages
       // TODO: revert this!!
@@ -522,6 +635,7 @@ async function submitAgentReplyToMessage(messageEvent, skipReply) {
     } else if (peersonaType === 'assistant') {
       log("askGptAssistant");
       logJ("userConfig:", userConfig);
+      userConfig.threadId = "thread_G3mDm0GNQOhY9Fl8FAYqwfh6";// thread_G3mDm0GNQOhY9Fl8FAYqwfh6
       if (!userConfig.threadId || userConfig.threadId === '0') {
         // TODO create a new thread
         const thread = await openai.beta.threads.create();
@@ -531,7 +645,9 @@ async function submitAgentReplyToMessage(messageEvent, skipReply) {
         saveUserConfig(pageId, userId, userConfig);
         logJ("userConfig:", userConfig);
       }
-      const gptResponse =  await askAssistant(page.assistantId, userConfig.threadId, userInput);
+      log("userConfig.threadId:" + userConfig.threadId);
+      log("userConfig.assistantId:" + page.assistant_id);
+      const gptResponse =  await askAssistant(page.assistant_id, userConfig.threadId, userInput);
       let hasImages;
       let hasFiles;
       let hasText;
@@ -558,9 +674,9 @@ async function submitAgentReplyToMessage(messageEvent, skipReply) {
       return messages;
     }
   } catch (error) {
-    console.error(`An error occurred: ${error}`);
+    console.error(`An error occurred while submitAgentReplyToMessage() call: ${error}`);
     const message = {
-      'text' : `I'm sorry, but an error occurred while processing your request: ${error}`
+      'text' : `I'm sorry, but an error occurred while processing your request: ${error.message}`
     };
     logJ("Message event processed by assistant:", message);
     await sendMessengerMessage(userId, page, message);
@@ -659,18 +775,23 @@ async function sendMessengerMessage(userId, page, message) {
     });
     console.log(`Typing on..`);
   } else {
-    console.log(`Sending message "${message.text}" to ${userId} on behalf of ${page.name}`);
-    const response = await axios.post('https://graph.facebook.com/v18.0/me/messages', {
-      recipient: {
-        id: userId
-      },
-      message: message
-    }, {
-      params: {
-        access_token: page.token
-      }
-    });
-    console.log(`Message sent! ${response.data}`);
+    const text = message.text;
+    for (let i = 0; i < text.length; i += 1990) {
+        const chunk = text.substring(i, i + 1990);
+        message.text = chunk;
+        console.log(`Sending message "${message.text}" to ${userId} on behalf of ${page.name}`);
+        const response = await axios.post('https://graph.facebook.com/v18.0/me/messages', {
+          recipient: {
+            id: userId
+          },
+          message: message
+        }, {
+          params: {
+            access_token: page.token
+          }
+        });
+        console.log(`Message sent: ${response.data}`);
+    }
   }
 }
 
@@ -735,16 +856,24 @@ async function askAssistant(assistantId, threadId, userInput) {
     });
     let runStatus = await openai.beta.threads.runs.retrieve(threadId, run.id);
     let attempts = 0;
-    while (runStatus.status !== "completed" && attempts < 90) {
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+    log(`assistant id ${assistantId} running...`);
+    while (runStatus.status !== "completed" && runStatus.status !== "failed" && attempts < 190) {
+      await new Promise((resolve) => setTimeout(resolve, 500));
       runStatus = await openai.beta.threads.runs.retrieve(threadId, run.id);
       attempts++;
+//      log(`run... ${attempts} status: ${runStatus.status}`);
     }
+    log(`run finished ${attempts} status: ${runStatus.status}`);
     if (runStatus.status !== "completed") {
+      if (runStatus.status === 'failed') {
+        throw new Error("Run failed!");
+      }
       await openai.beta.threads.runs.cancel(threadId, run.id);
       throw new Error("Run did not complete in the expected time.");
     }
+    log("retrieving messages..");
     const messages = await openai.beta.threads.messages.list(threadId);
+    log("last message..");
     const lastMessageForRun = messages.data
       .filter(
         (message) => message.run_id === run.id && message.role === "assistant"
@@ -849,6 +978,12 @@ async function onMessageWithAttachment(messageEvent) {
     logJ("attachment:", attachment);
     if (!page) {
       page = await getPageConfig(pageId);
+
+      if (!page) {
+        log("Page config not found.");
+        return;
+      }
+
       // check timestamp
       if (timestamp === page.timestamp) {
         log("Ignoring repeated messsage, timestamp:" + timestamp);
@@ -960,29 +1095,30 @@ async function onMessageWithAttachment(messageEvent) {
 
 const postWriterPropmt = `**English Prompt:**
 
-As a multi-lingual social media writing expert inspired by the style of Meghan O'Geiblyn, your task is to craft engaging Facebook posts. You will receive a TEXT provided by a user. Your job is to:
-
+As a multi-lingual social media writing expert your task is to craft engaging Facebook post with your feedback on the TEXT you are reviewing.
+Your job is to:
 1. **Read and Understand the TEXT**: Carefully read the user-provided TEXT to grasp its main ideas and nuances.
 2. **Highlight Key Points**: Identify and emphasize the major points in the TEXT. Your post should reflect the core message of the TEXT in a concise and engaging manner.
 3. **Provide Personal Insights**: Share your thoughts, reflections, and insights on the TEXT. How does it resonate with you? What unique perspective can you offer?
-4. **Write in the Appropriate Language**: The post must be written in the same language as the TEXT. If the TEXT is in Russian, write your post in Russian. For other languages, adapt accordingly. This is crucial to ensure that the audience for which the TEXT is intended fully understands and connects with your post.
-5. **First-Person Narrative**: Write from a first-person perspective to make the post more personal and relatable. This style helps in creating a connection with the readers.
+4. **Write in the Appropriate Language**: The post must be written in the same language as the TEXT. If the TEXT is in Russian, write your post in Russian. For other languages, adapt accordingly.
+This is crucial to ensure that the audience for which the TEXT is intended fully understands and connects with your post.
+5. **First-Person Narrative**: Write from a first-person perspective to make the post more personal and relatable.
+This style helps in creating a connection with the readers.
 
-Remember, your role is to engage, inform, and connect with the audience in the language they understand, drawing inspiration from the style of Meghan O'Geiblyn. Your creativity and linguistic skills are key in making each post a meaningful and enjoyable read for the audience.
+Remember, your role is to engage, inform, and connect with the audience as an independent reviewer.
+Your creativity and linguistic skills are key in making each post a meaningful and enjoyable read for the audience.
 
 ---
 
 **Russian Prompt (Русский Подсказка):**
 
-Как эксперт по многоязычному написанию в социальных сетях, вдохновленный стилем Мэган О'Гейблин, ваша задача - создавать захватывающие посты для Facebook. Вы получите TEXT, предоставленный пользователем. Ваша задача:
-
-1. **Читать и Понимать TEXT**: Внимательно прочтите предоставленный пользователем TEXT, чтобы уловить его основные идеи и нюансы.
-2. **Выделить Ключевые Моменты**: Определите и подчеркните основные моменты в TEXT. Ваш пост должен отражать основное сообщение TEXT кратко и увлекательно.
-3. **Предоставить Личные Впечатления**: Поделитесь своими мыслями, размышлениями и впечатлениями о TEXT. Как он на вас отзывается? Какую уникальную точку зрения вы можете предложить?
-4. **Писать на Соответствующем Языке**: Пост должен быть написан на том же языке, что и TEXT. Если TEXT на русском языке, пишите ваш пост на русском. Для других языков соответственно адаптируйте. Это важно для того, чтобы аудитория, для которой предназначен TEXT, полностью поняла и связалась с вашим постом.
-5. **Писать от Первого Лица**: Пишите от первого лица, чтобы сделать пост более личным и близким. Этот стиль помогает создать связь с читателями.
-
-Помните, ваша роль - вовлекать, информировать и связываться с аудиторией на языке, который они понимают, черпая вдохновение из стиля Мэган О'Гейблин. Ваше творчество и языковые навыки ключевы в создании каждого поста, который будет значимым и приятным для чтения аудитории.`
+Как эксперт по написанию многоязычных сообщений в социальных сетях, ваша задача - создать привлекательный пост в Facebook с вашим отзывом о ТЕКСТЕ, который вы рецензируете. Ваша работа состоит в следующем:
+Чтение и Понимание ТЕКСТА: Внимательно прочитайте предоставленный пользователем ТЕКСТ, чтобы понять его основные идеи и нюансы.
+Выделение ключевых моментов: Определите и выделяйте основные моменты в ТЕКСТЕ. Ваш пост должен отражать основное сообщение ТЕКСТА кратким и увлекательным образом.
+Предоставление личных идей: Поделитесь своими мыслями, размышлениями и идеями о ТЕКСТЕ. Как он резонирует с вами? Какую уникальную перспективу вы можете предложить?
+Написание на соответствующем языке: Пост должен быть написан на том же языке, что и ТЕКСТ. Если ТЕКСТ на русском, напишите свой пост на русском. Для других языков адаптируйте соответственно. Это крайне важно, чтобы целевая аудитория, для которой предназначен ТЕКСТ, полностью понимала и связывалась с вашим постом.
+Личное повествование от первого лица: Пишите с позиции первого лица, чтобы сделать пост более личным и доступным. Этот стиль помогает создать связь с читателями.
+Ваша роль - привлечь, информировать и связаться с аудиторией в качестве независимого рецензента. Ваша креативность и языковые навыки играют ключевую роль в том, чтобы каждый пост был значимым и приятным для аудитории`
 
 const postWriterPropmt_simple = `
 As a multi-lingual social media writing expert inspired by the style of Meghan O'Geiblyn, your task is to craft engaging Facebook posts.
@@ -1031,9 +1167,9 @@ As a multi-lingual social media writing expert inspired by the style of Meghan O
       },
       {
         "role": "user",
-        "content": content.text,
+        "content": `TEXT=<<<${content.text}>>>`,
     }],
-    model: "gpt-4-1106-preview"// "gpt-3.5-turbo-1106",
+    model: "gpt-4-turbo-preview"// "gpt-3.5-turbo-1106",
   });
 
   console.log(completion.choices[0]);
@@ -1140,16 +1276,16 @@ async function sendTextMessage(pageID, userID, text) {
   }
 }
 
-function replyToChanges(changes, pageId) {
+async function replyToChanges(changes, pageId) {
   console.log(`replyToChanges ${JSON.stringify(changes)}`);
-  changes.forEach(change => {
+  changes.forEach(async change => {
       if (change.field === `feed`) {
-          replyToFeed(change.value, pageId);
+          await replyToFeed(change.value, pageId);
       }
   });
 }
 
-function replyToFeed(value, pageId) {
+async function replyToFeed(value, pageId) {
   console.log(`replyToFeed ${JSON.stringify(value)}`);
   // Do not answet to yourself
   const userId = value.from.id;
@@ -1157,6 +1293,18 @@ function replyToFeed(value, pageId) {
     log("Ignore our changes");
     return;
   }
+  if (value.item === 'reaction') {
+    switch (value.reaction_type) {
+      case "like":
+          console.log(`${userId} likes me`);
+          break;
+      default:
+          console.log(`${userId} ${value.reaction_type} me`);
+    }
+    // we can store who liked us and  send them a message
+    return;
+  }
+
   if (value.verb != 'add' && value.verb != 'edit') return;
 
   const isPost = value.item  ==='post'; // TODO: something else?
@@ -1165,11 +1313,7 @@ function replyToFeed(value, pageId) {
   const userName = value.from.name
   log(`Reply to ${value.from.name}`);
 
-  submitAgentReplyToPostOrComment(userInput, pageId, userId, postId)
-    .catch(error => {
-        console.error("Error processing agent response:", error);
-        // Handle error appropriately, perhaps send a message to the user
-    });
+  await submitAgentReplyToPostOrComment(userInput, pageId, userId, postId);
 };
 
 
@@ -1177,6 +1321,10 @@ async function submitAgentReplyToPostOrComment(userInput, pageId, posterId, post
   const userId = 0;
   try {
     const page = await getPageConfig(pageId);
+    if(!page) {
+      console.error("No page found for pageId:", pageId);
+      return;
+    }
     await sendMessengerMessage(userId, page, null);
     const userConfig = await getUserConfig(pageId, 0);
     // const personas = await getPersonas(pageId);
@@ -1513,3 +1661,115 @@ async function insertHtmlSnippet(url, htmlSnippet) {
     throw error;
   }
 }
+const loginPage = `
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Welcome to New-I</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f4f4f4;
+            color: #333;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .greeting {
+            font-size: 24px;
+            margin-bottom: 10px;
+        }
+
+        .instruction {
+            font-size: 18px;
+            margin-bottom: 20px;
+        }
+
+        .links-list a {
+          font-size: 18px;
+          display: block;
+            margin-bottom: 10px;
+              color: #007bff;
+            text-decoration: none;
+        }
+
+        .links-list a:hover {
+            text-decoration: underline;
+        }
+
+        .footer {
+            text-align: center;
+            padding: 20px 0;
+            background-color: #ddd;
+            font-size: 14px;
+        }
+
+        .footer a {
+            color: #007bff;
+            text-decoration: none;
+        }
+
+        .footer a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+  <div id="fb-root"></div>
+  <script async defer crossorigin="anonymous" src="https://connect.facebook.net/en_US/sdk.js#xfbml=1&version=v19.0&appId=892971785510758" nonce="YpcHTnZM"></script>
+  <div>
+    <div class="container">
+        <div class="greeting">Welcome to New-I!</div>
+        <div class="instruction">You are now connected to AI-HOST™ platform. To disconnect follow the <a href="https://www.facebook.com/settings/?tab=business_tools">link</a>
+        <p>Your Facebook pages are listed below. To create a new page go <a href="https://www.facebook.com/pages/creation/?ref_type=launch_point" target="_blank">here</a>';
+        </p>
+        </div>
+        <p>You can configure page assistants by messaging these commands:
+        <br><code>/key $PAGE_PASSWORD <a href="https://platform.openai.com/api-keys" target="_blank">your-openai-api-key</a></code>
+        <br><code>/assistant $PAGE_PASSWORD <a href="https://platform.openai.com/assistants" target="_blank">your-assistant-id</a></code>
+        </p>
+        <div class="instruction">
+        <p>Follow <a href="https://new-i.ai/setup_pages" target="_blank">step by step instructions</a> to setup Ai-Host™ Assistants</p>
+        <p>Have fun!
+        </div>
+
+        <p>
+        <div class="links-list">
+            <!-- Add more links here -->
+        </div>
+
+        <div class="footer">
+        &copy; New-I, Inc. | <a href="https://new-i.ai">Visit our Website</a>
+        </div>
+    </div>
+</body>
+</html>
+`
+function getPageSnippet(pageId, pageName, key, assistant, password) {
+  const shortKey = (key && key.substring(0, 10) + "..") || "undefined";
+  const snippet = `
+  <div>
+  <div class="fb-page" data-href="https://m.me/${pageId}" data-tabs="" data-width="" data-height="" data-small-header="false" data-adapt-container-width="true" data-hide-cover="false" data-show-facepile="true">
+  <blockquote cite="https://www.facebook.com/${pageId}" class="fb-xfbml-parse-ignore">
+  <a href="https://m.me/${pageId}">${pageName}</a></blockquote>
+  </div>
+  <code>
+  <br>/key ${password} ${shortKey}
+  <br>/assistant ${password} ${assistant}
+  </code>
+  <a href="https://m.me/${pageId}" target="_blank">Message ${pageName}</a>
+  <hr>
+  </div>
+  <p>
+  `;
+  return snippet;
+}
+
+//==========
