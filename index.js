@@ -35,6 +35,79 @@ function generateShortUID() {
   return base36Timestamp + randomString;
 }
 
+async function getAssistants(key) {
+  log(`Getting assistants for ${key} ...`);
+  if (key) {
+    try {
+      const openai = new OpenAI({
+        apiKey: key
+      });
+      const assistants = await openai.beta.assistants.list({
+        order: "desc",
+        limit: "100",
+      });
+      log(`Found assistants:`);
+      return assistants;
+    } catch(err) {
+      console.error(err);
+    }
+  }
+  return false;
+}
+
+
+async function getAssistantByNameOrId(name, id, assistants) {
+  if (name || id) {
+    for (let i = 0; i < assistants.body.data.length; i++) {
+      const assistant = assistants.body.data[i];
+      if (assistant.name === name) {
+        log(`Found assistant for ${name}. Assistant id: ${assistant.id}`);
+        return assistant;
+      }
+      if (assistant.id === id) {
+        log(`Found assistant for ${id}. Assistant name: ${assistant.name}`);
+        return assistant;
+      }
+    }
+  }
+  try {
+    // Create new assistant
+    // TODO!!!
+    const assistant = await openai.beta.assistants.create({
+        name: name,
+        description:  `This is an assistant created by New-I for Facebok page "${name}".`,
+        instructions: `Your name is ${name}. You are an assistant for a facebook page "${name}". You will be asked questions about your page and you can answer them using natural language.`,
+        tools: [{ type: "code_interpreter" }],
+        model: "gpt-3.5-turbo"
+      });
+      log(`Created new assistant for ${name}. Assistant id: ${assistant.id}`);
+      return assistant;
+    } catch(err) {
+      console.error(err);
+    }
+    return false;
+}
+
+async function onPageSubscription(req, res) {
+  const pageId = req.body.pageId;
+  const enabled = req.body.state;
+  const pageConfig = await loadJson(`pages/${pageId}/config`);
+  const token = pageConfig.token;
+  const subscriptions = enabled ? 'email,feed,group_feed,inbox_labels,mention,message_reactions,messages,' : 'email';
+  log(`was: ${pageConfig.enabled}, now: ${enabled}, enablePageSubscription ${subscriptions}`);
+  const subscribedResponse = await axios.post(`https://graph.facebook.com/v18.0/${pageId}/subscribed_apps`, null, {
+    params: {
+      subscribed_fields: subscriptions,
+      access_token: token,
+    }
+  });
+  const subscriptionReply = JSON.stringify(subscribedResponse.data);
+  log(`Subscribed: ${subscriptionReply}`);
+  pageConfig.enabled = enabled;
+  saveJson(`pages/${pageId}/config`, pageConfig);
+  return subscriptionReply;
+}
+
 // ===== Facebook login callback =====
 async function initFacebookUser(code) {
   // Exchange code for short-lived token
@@ -77,6 +150,13 @@ async function initFacebookUser(code) {
 
   // Store user ID and access token
   var config = await loadJson(`users/${userId}/config`, config) || {};
+
+  const assistants = await getAssistants(config.openai_key);
+  if (!assistants) {
+    log("Requesting new key...");
+    return loginWithOpenAiKey.replace('$USER_ID', userId);
+  }
+
   config.userId = userId;
   config,accessToken = longLivedToken;
   if (!config.page_password) {
@@ -100,6 +180,7 @@ async function initFacebookUser(code) {
     console.log('Page ID:', page.id);
     console.log('Page Name:', page.name);
 
+
     var pageConfig = await loadJson(`pages/${page.id}/config`);
     if (!pageConfig) {
       pageConfig = {
@@ -107,7 +188,8 @@ async function initFacebookUser(code) {
         name : page.name,
         token: page.access_token,
         admin_id: userId,
-        page_password: pagePassword
+        page_password: pagePassword,
+        openai_key: config.openai_key,
         // more to add..
       };
     } else {
@@ -116,12 +198,18 @@ async function initFacebookUser(code) {
       pageConfig.token = page.access_token;
       pageConfig.admin_id = userId;
       pageConfig.page_password = pagePassword;
+      pageConfig.openai_key = config.openai_key;
     }
-    log(`Saving page pages/${page.id}/config...`);
+
+    const assistant = await getAssistantByNameOrId(page.name, pageConfig.assistantId, assistants);
+    pageConfig.assistantId = assistant.id;
+    pageConfig.assistant_id = assistant.id;
+
+    logJ(`Saving pages/${page.id}/config: `, pageConfig);
     saveJson(`pages/${page.id}/config`, pageConfig);
 
     // Subscribe
-    const subscriptions = 'email,feed,group_feed,inbox_labels,mention,message_reactions,messages,';
+    const subscriptions = pageConfig.enabled ? 'email,feed,group_feed,inbox_labels,mention,message_reactions,messages,' : 'email';
     log("subscriptions:" + subscriptions);
     const subscribedResponse = await axios.post(`https://graph.facebook.com/v18.0/${page.id}/subscribed_apps`, null, {
       params: {
@@ -132,9 +220,10 @@ async function initFacebookUser(code) {
     const subscriptionReply = JSON.stringify(subscribedResponse.data);
     log(`Subscribe responce: ${subscriptionReply}`);
     // add page link
-    pagesList += getPageSnippet(page.id, page.name, pageConfig.openai_key, pageConfig.assistantId, pagePassword);
+
+    pagesList += getPageSnippet(page.id, page.name, pageConfig.openai_key, pageConfig.assistantId, pagePassword, pageConfig.enabled ? "checked" : "");
   }
-  log(pagesList);
+  // log(pagesList);
   return loginPage.replace('<!-- Add more links here -->', pagesList)
    .replace("$PAGE_PASSWORD", pagePassword)
    .replace("$PAGE_PASSWORD", pagePassword);
@@ -159,53 +248,55 @@ async function onPostTelegram(req, res, assistantId, token) {
     const bot = new Telegraf(token);
 
     // Function to send 'typing' action
-    const sendTypingAction = (ctx) => {
-      ctx.replyWithChatAction('typing');
+    const sendTypingAction = async (ctx) => {
+      await ctx.replyWithChatAction('typing');
     };
 
     bot.on('text', async (ctx) => {
-      sendTypingAction(ctx);
+      await sendTypingAction(ctx);
       var userInput = ctx.message.text;
+      // TODO!!!!
+      var _openai = openai;
       // get openai key
-      if (!openai) {
-        console.error(`No key found for ${pageId}, try to get one...`);
+      if (req.query.t_key) {
         try {
-          const ai = new OpenAI({
-            apiKey: userInput
-          });
-          myAssistants = await ai.beta.assistants.list({
-            order: "desc",
-            limit: "100",
-          });
-          for (let i = 0; i < myAssistants.body.data.length; i++) {
-            const assistant = myAssistants.body.data[i];
-            log(JSON.stringify(assistant));
-          }
-          openai = ai;
+            const ai = new OpenAI({
+              apiKey: req.query.t_key
+            });
+            // myAssistants = await ai.beta.assistants.list({
+            //   order: "desc",
+            //   limit: "100",
+            // });
+            // for (let i = 0; i < myAssistants.body.data.length; i++) {
+            //   const assistant = myAssistants.body.data[i];
+            //   log(JSON.stringify(assistant));
+            // }
+            _openai = ai;
         } catch (err) {
-          console.error(err);
-          log(`Invalid key: ${userInput}`);
-          ctx.reply(`Invalid key: ${userInput}`);
-          return;
+            console.error(err);
+            log(`Invalid key: ${req.query.t_key}`);
+            ctx.reply(`Invalid key`);
+            return;
         }
       }
-
       const user = ctx.update.message.from;
       const userName = user.username;
+      logJ(`Received message from user`, user);
       const botName = bot.botInfo.username;
+      logJ(`Bot:`, bot);
       const configName = `telegram/${botName}/${userName}/config.json`;
       // get thread for bot + user
       let config = await loadJson(configName);
       if (!config) {
         log("creating new config:" + configName);
-        const thread = await openai.beta.threads.create();
+        const thread = await _openai.beta.threads.create();
         config = {
           'threadId' : thread.id,
         };
         await saveJson(configName, config);
       }
 
-      const thread = await openai.beta.threads.retrieve(config.threadId);
+      const thread = await _openai.beta.threads.retrieve(config.threadId);
 
       const isGroup = ctx.update.message.chat.type === 'group';
       const hasMentioned = userInput.toLowerCase().includes(botName.toLowerCase());
@@ -214,6 +305,7 @@ async function onPostTelegram(req, res, assistantId, token) {
         userInput = "Reply \"OK\" after you read this message";
       }
 
+      log(`asking assistant ${assistantId} ...`);
       let gptResponse;
       try {
         gptResponse =  await askAssistant(assistantId, config.threadId, userInput);
@@ -233,11 +325,18 @@ async function onPostTelegram(req, res, assistantId, token) {
         }
       } catch(err) {
         console.error(err);
-        await ctx.reply(err.message)
+        // try {
+        //   await ctx.reply(err.message);
+        // } catch (e) {
+        //   console.error(e);
+        // }
       }
     });
 
     bot.on('voice', async (ctx) => {
+      logJ(`Received message from user`, ctx.update.message.from);
+      logJ(`Bot:`, bot);
+
       sendTypingAction(ctx);
       const tempFilePath = `${ctx.chat.id}_temp_audio_.wav`;
       logJ(`Getting file link from:`, ctx.message.voice);
@@ -313,7 +412,7 @@ async function onPostTelegram(req, res, assistantId, token) {
             // Clean up: delete the temporary file
             fs.unlinkSync(tempFilePath);
           }
-          ctx.reply(response.text.value);
+          ctx.reply(response.text.value, { parse_mode: 'Markdown' });
         } else {
           ctx.reply(JSON.stringify(response));
         }
@@ -353,6 +452,95 @@ async function transcribeAudio(attachmentUrl, chatId) {
   }
 }
 
+async function onApiKey(req, res, apiKeyName) {
+  log(`onApiKey(${apiKeyName}`);
+  const key = req.body.api_key
+  const userId = req.body.user_id;
+  log(`Setting openapi key: + ${key} for user: ${userId}`);
+  try {
+    const openai = new OpenAI({
+      apiKey: key
+    });
+    const assistants = await openai.beta.assistants.list({
+      order: "desc",
+      limit: "100",
+    });
+    var assistantsList = "";
+    for (let i = 0; i < assistants.body.data.length; i++) {
+      const ass = assistants.body.data[i];
+        assistantsList += `${ass.id} ${ass.name}<br>\n`;
+    }
+    // Store new key in config
+    var config = await loadJson(`users/${userId}/config`, config) || {};
+    config.openai_key = key;
+    await saveJson(`users/${userId}/config`, config);
+    assistantsList = JSON.stringify(assistantsList);
+    res.status(200).send(`OK`);
+    log(`Saved openai key: + ${key} for user: ${userId}\n ${assistantsList}`);
+  } catch(err) {
+    // Wrong key
+    console.log(err.message);
+    res.status(401).send(err.message);
+  }
+
+}
+
+async function onTelegramCommand(req, res, cmd) {
+  log(`onTelegramCommand(${cmd})`);
+  if (cmd === 'create_bot') {
+    try {
+      const apiKey = req.body.api_key;
+      const token = req.body.token;
+      const username = req.body.username;
+      const fileName = `telegram/bot_owners/${username}/config`;
+      const bot = new Telegraf(token);
+      const openai = new OpenAI({API_KEY: apiKey});
+      const assistants = await openai.beta.assistants.list({  order: "desc", limit: "100"});
+      const assistant = await getAssistantByNameOrId(null, apiKey, assistants);
+      const botItem = {
+          openai_key: apiKey,
+          openai_assistant_id: assistant.id,
+          token: token,
+          first_name: bot.first_name,
+          username: bot.username,
+          owner: username,
+          enabled: false,
+      };
+      const userConfig = await loadJson(fileName) || {};
+      const bots = userConfig['bots'] || [];
+      // find existing bots with same name
+      const existingBotIndex = bots.findIndex((item) => item.token === bot.token);
+      if (existingBotIndex >= 0) {
+        log(`Updating existing bot: ${bot.username}`);
+        botItem.enabled = bots[existingBotIndex].enabled;
+        bots[existingBotIndex] = botItem;
+      } else {
+        log(`Adding new bot: ${bot.username}`);
+        bots.push(botItem);
+      }
+      // save config
+      //await saveJson(fileName, userConfig);
+      return res.status(200).send(botItem);
+    } catch (err) {
+      console.log(err.message);
+      res.status(500).send(err.message);
+    }
+  } else if (cmd === 'delete_bot') {
+    const userConfig = await loadJson(fileName) || {};
+    const bots = userConfig['bots'] || [];
+    // find existing bots with same name
+    const existingBotIndex = bots.findIndex((item) => item.token === bot.token);
+    if (existingBotIndex >= 0) {
+      log(`Deleting existing bot: ${bot.username}`);
+      bots.splice(existingBotIndex, 1);
+    }
+  } else if (cmd === 'get_bots') {
+    const username = req.body.username;
+    const userConfig = await loadJson(fileName) || {};
+    const bots = userConfig['bots'] || [];
+    return res.status(200).send(bots);
+  }
+}
 functions.http('webhook', async (req, res) => {
   log("<<<<<<<< webhook");
   try {
@@ -384,6 +572,15 @@ functions.http('webhook', async (req, res) => {
             await onPost(req, res);
         } else if (req.body.object === 'instagram') {
           logJ("Instagram TODO:", req.body);
+        } else if (req.query.api_key) {
+          await onApiKey(req, res, req.query.api_key)
+          return;
+        } else if (req.query.subscribe_state) {
+          await onPageSubscription(req, res);
+          return;
+        } else if (req.query.t_c) {
+          await onTelegramCommand(req, res, req.query.t_c);
+          return;
         } else {
             log("Unsupported object: " + JSON.stringify(req.body));
         }
@@ -540,7 +737,12 @@ async function submitAgentReplyToMessage(messageEvent, skipReply) {
         log(`Your assistant id: ${assistantId}`);
         page.assistant_id = assistantId;
       } else {
-        reply += `Available Assistants:\n${assistantsList}.\n You can set Assistant by /assistant <password> <assistant-id>`;
+        if ( assistants.body.data.length == 0) {
+          reply +=  "You don't have any assistant yet.\n";
+        } else {
+          reply += `Couldn't find assistant with matching name: ${page.name}.\n`;
+        }
+        reply += `You can set Assistant by /assistant your-password your-openai-assistant-id`;
       }
       page.openai_key = key;
       savePageConfig(pageId, page);
@@ -601,11 +803,19 @@ async function submitAgentReplyToMessage(messageEvent, skipReply) {
       log(`Ignoring message to a page ${pageId} without openapi key:`)
       return;
     }
+    // BUG!!
     if (!page.assistant_id) {
-      log(`Ignoring message to a page ${pageId} without assistant:`)
-      return;
+      if (page.assistantId) {
+        page.assistant_id = page.assistantId
+      } else {
+        log(`Ignoring message to a page ${pageId} without assistant_id:`);
+        logJ("pageConfig", page);
+        return;
+      }
     }
   }
+
+  logJ("page:", page);
 
   const timestamp = messageEvent.timestamp;
   // check timestamp
@@ -613,13 +823,13 @@ async function submitAgentReplyToMessage(messageEvent, skipReply) {
   //   log(`Timestamp ${timestamp} is older than last ${page.timestamp}`);
   //   return
   // }
-  // if (timestamp === page.timestamp) {
-  //   log("Ignoring repeated messsage, timestamp:" + timestamp);
-  //   log(`new timestamp:${timestamp}, old timestamt:${page.timestamp}`);
-  //   return;
-  // }
+  if (timestamp === page.timestamp) {
+    log("Ignoring repeated messsage, timestamp:" + timestamp);
+    log(`new timestamp:${timestamp}, old timestamt:${page.timestamp}`);
+    return;
+  }
   page.timestamp = timestamp;
-  savePageConfig(pageId, page);
+  await savePageConfig(pageId, page);
   await sendMessengerMessage(userId, page, null);
   const userConfig = await getUserConfig(pageId, userId);
   const peersonaType = 'assistant';
@@ -635,7 +845,6 @@ async function submitAgentReplyToMessage(messageEvent, skipReply) {
     } else if (peersonaType === 'assistant') {
       log("askGptAssistant");
       logJ("userConfig:", userConfig);
-      userConfig.threadId = "thread_G3mDm0GNQOhY9Fl8FAYqwfh6";// thread_G3mDm0GNQOhY9Fl8FAYqwfh6
       if (!userConfig.threadId || userConfig.threadId === '0') {
         // TODO create a new thread
         const thread = await openai.beta.threads.create();
@@ -646,7 +855,15 @@ async function submitAgentReplyToMessage(messageEvent, skipReply) {
         logJ("userConfig:", userConfig);
       }
       log("userConfig.threadId:" + userConfig.threadId);
-      log("userConfig.assistantId:" + page.assistant_id);
+      log("page.assistantId:" + page.assistant_id);
+      if (!page.assistant_id) {
+        if (page.assistantId) {
+          page.assistant_id = page.assistantId;
+          log("Fixing page.assistantId:" + page.assistant_id);
+        } else {
+          throw Error("No assistant id provided");
+        }
+      }
       const gptResponse =  await askAssistant(page.assistant_id, userConfig.threadId, userInput);
       let hasImages;
       let hasFiles;
@@ -762,7 +979,9 @@ async function askChatGpt(userInput, messages, userId, pageId, page, gptModel) {
 
 // Sends response messages via GraphQL
 async function sendMessengerMessage(userId, page, message) {
-  if (!message) {
+  if (!message && userId !== 0) {
+    console.log(`Typing on for ${userId}..`);
+    logJ(`page`, page);
     const response = await axios.post('https://graph.facebook.com/v18.0/me/messages', {
       recipient: {
         id: userId
@@ -773,7 +992,6 @@ async function sendMessengerMessage(userId, page, message) {
         access_token: page.token
       }
     });
-    console.log(`Typing on..`);
   } else {
     const text = message.text;
     for (let i = 0; i < text.length; i += 1990) {
@@ -841,7 +1059,7 @@ async function createAssistantWithThread(assistantId, assistantThreadId) {
   };
 }
 
-// Main function that user input
+// Main function that handles user input
 async function askAssistant(assistantId, threadId, userInput) {
   if (!assistantId || !threadId) {
     throw new Error("Assistant ID or Thread ID is missing.");
@@ -857,13 +1075,16 @@ async function askAssistant(assistantId, threadId, userInput) {
     let runStatus = await openai.beta.threads.runs.retrieve(threadId, run.id);
     let attempts = 0;
     log(`assistant id ${assistantId} running...`);
+    // const myAssistant = await openai.beta.assistants.retrieve(assistantId);
+    // console.log(myAssistant);
+    // logJ('assistant:', myAssistant);
     while (runStatus.status !== "completed" && runStatus.status !== "failed" && attempts < 190) {
       await new Promise((resolve) => setTimeout(resolve, 500));
       runStatus = await openai.beta.threads.runs.retrieve(threadId, run.id);
       attempts++;
 //      log(`run... ${attempts} status: ${runStatus.status}`);
     }
-    log(`run finished ${attempts} status: ${runStatus.status}`);
+    log(`run finished with ${attempts} attempts, status: ${runStatus.status}`);
     if (runStatus.status !== "completed") {
       if (runStatus.status === 'failed') {
         throw new Error("Run failed!");
@@ -969,120 +1190,140 @@ async function onMessageWithAttachment(messageEvent) {
   const timestamp = messageEvent.timestamp;
   const attachments = messageEvent.message.attachments;
   const text = removeUrls(messageEvent.message.text);
-  let page;
+  const page = await getPageConfig(pageId);
+  if (!page) {
+    log("Page config not found.");
+    return;
+  }
 
-  for (let i = 0; i < attachments.length; i++) {
-    const attachment = attachments[i];
-    // Get the URL of the message attachment
-    const attachmentUrl = attachment.payload.url;
-    logJ("attachment:", attachment);
-    if (!page) {
-      page = await getPageConfig(pageId);
+  const b = (timestamp < page.timestamp);
+  log(`onMessageWithAttachment ${b}`);
 
-      if (!page) {
-        log("Page config not found.");
-        return;
+  // check timestamp
+  if ((timestamp === page.timestamp) || (timestamp < page.timestamp)) {
+    log(`attachment: Ignoring repeated messsage, timestamp:${timestamp}, page.timestamp:${page.timestamp}`);  // ignore repeated messages
+    logJ("page:", page)
+    return;
+  }
+  log(`updating timestamp:${timestamp}, old timestamt:${page.timestamp}`);
+  page.timestamp = timestamp;
+  await savePageConfig(pageId, page);
+
+  try {
+    for (let i = 0; i < attachments.length; i++) {
+      const attachment = attachments[i];
+      // Get the URL of the message attachment
+      const attachmentUrl = attachment.payload.url;
+      logJ("attachment:", attachment);
+      if (attachment.type === 'audio') {
+        //const extension = extractFileExtension(attachmentUrl);
+        const extension = "wav";
+        log(extension); // Output will be the file extension
+        const tempFilePath = `${userId}_${pageId}_temp_audio.${extension}`;
+        try {
+            // typing on...
+          await sendMessengerMessage(userId, page, null);
+          // Download the file from URL
+          const response = await axios({
+            method: 'GET',
+            url: attachmentUrl,
+            responseType: 'stream',
+          });
+          await pipeline(response.data, fs.createWriteStream(tempFilePath));
+
+          // Transcribe the audio file
+          const transcription = await openai.audio.transcriptions.create({
+            file: fs.createReadStream(tempFilePath),
+            model: 'whisper-1',
+          });
+          messageEvent.message = transcription;
+
+          logJ("transcription:", transcription);
+
+          const agentReplies = await submitAgentReplyToMessage(messageEvent);
+          logJ("agentReplies:", agentReplies);
+
+          await speakToFile(agentReplies[0].text, tempFilePath);
+          log("audio file created:" + tempFilePath);
+
+          await sendMessengerAudioMessage(page.token, userId, tempFilePath);
+        } catch (error) {
+          console.error('Error during transcription:', error);
+        } finally {
+          // Clean up: delete the temporary file
+          fs.unlinkSync(tempFilePath);
+          // page.timestamp = timestamp;
+          // await savePageConfig(pageId, page);
       }
+      } else if (attachment.type === 'video') {
+        log("Not supported!");
+      } else if (attachment.type === 'image') {
+        log("Not supported!");
+      } else if (attachment.type === 'fallback') {
+        const url = extractUParam(attachment.payload.url);
 
-      // check timestamp
-      if (timestamp === page.timestamp) {
-        log("Ignoring repeated messsage, timestamp:" + timestamp);
-        return;
-      }
-      log(`new timestamp:${timestamp}, old timestamt:${page.timestamp}`);
-      page.timestamp = timestamp;
-      savePageConfig(pageId, page);
-    }
-    if (attachment.type === 'audio') {
-      //const extension = extractFileExtension(attachmentUrl);
-      const extension = "wav";
-      log(extension); // Output will be the file extension
-      const tempFilePath = `${userId}_${pageId}_temp_audio.${extension}`;
-      try {
-          // typing on...
         await sendMessengerMessage(userId, page, null);
-        // Download the file from URL
-        const response = await axios({
-          method: 'GET',
-          url: attachmentUrl,
-          responseType: 'stream',
-        });
-        await pipeline(response.data, fs.createWriteStream(tempFilePath));
 
-        // Transcribe the audio file
-        const transcription = await openai.audio.transcriptions.create({
-          file: fs.createReadStream(tempFilePath),
-          model: 'whisper-1',
-        });
-        messageEvent.message = transcription;
-
-        const agentReplies = await submitAgentReplyToMessage(messageEvent);
-        logJ("agentReplies:", agentReplies);
-
-        await speakToFile(agentReplies[0].text, tempFilePath);
-        log("audio file created:" + tempFilePath);
-
-        await sendMessengerAudioMessage(page.token, userId, tempFilePath);
-      } catch (error) {
-        console.error('Error during transcription:', error);
-      } finally {
-        // Clean up: delete the temporary file
-        fs.unlinkSync(tempFilePath);
-      }
-    } else if (attachment.type === 'video') {
-      log("Not supported!");
-    } else if (attachment.type === 'image') {
-      log("Not supported!");
-    } else if (attachment.type === 'fallback') {
-      const url = extractUParam(attachment.payload.url);
-
-      await sendMessengerMessage(userId, page, null);
-
-      let postContent = {
-        text: text || " "
-      };
-
-      try{
-        // Extract content
-        const extractorUrl = `https://extractorapi.com/api/v1/extractor`;
-        const response = await axios.get(extractorUrl, {
-          params: {
-            js: false,
-            fields: 'raw_text',
-            apikey: '064a5c5f58c25bc5fadc0ecb885bdf1f93940670',
-            url: url
-          }
-        });
-        const content = response.data;
-        content.html = "none";
-        // TODO: Summarize
-        const message = {
-          'text' : content.text
+        let postContent = {
+          text: text || " "
         };
-        logJ("Extracted content:", content);
 
-        // Create facebook post
-        postContent = await createPost(content);
-      } catch (err) {
-        console.error(err);
-      }
-      logJ("postContent:", postContent);
-      // Post draft
-      const postResponse = await axios.post(`https://graph.facebook.com/v18.0/${pageId}/feed`, {
-        message: postContent,
-        link: url,
-        published: true
-      }, {
-        params: {
-          access_token: page.token
+        try{
+          // Extract content
+          const extractorUrl = `https://extractorapi.com/api/v1/extractor`;
+          const response = await axios.get(extractorUrl, {
+            params: {
+              js: false,
+              fields: 'raw_text',
+              apikey: '064a5c5f58c25bc5fadc0ecb885bdf1f93940670',
+              url: url
+            }
+          });
+          const content = response.data;
+          content.html = "none";
+
+          // TODO: Summarize
+          const message = {
+            'text' : content.text
+          };
+          logJ("Extracted content:", content);
+
+          // Create facebook post
+          postContent = await createPost(content);
+          logJ("postContent:", postContent);
+          // Post draft
+          const postResponse = await axios.post(`https://graph.facebook.com/v18.0/${pageId}/feed`, {
+            message: postContent,
+            link: url,
+            published: false
+          }, {
+            params: {
+              access_token: page.token
+            }
+          });
+          logJ("posted:", postResponse.data);
+          postId = postResponse.data.id.split("_")[1];
+          // TODO: save the post id in the page config
+          const archive = {
+            text: content.text,
+            post: postContent,
+            post_id: postId,
+          }
+
+          saveJson(`archive/posts/${postId}.json`, archive);
+
+          await sendMessengerMessage(userId, page, {
+            text: `https://www.facebook.com/${pageId}/posts/${postId}`
+          });
+        } catch (err) {
+          console.error(err);
         }
-      });
-      logJ("posted:", postResponse.data);
-
-      await sendMessengerMessage(userId, page, {
-         text: `👍 https://www.facebook.com/${pageId}/posts/${postResponse.data.id}`
-      });
+      }
     }
+  } finally {
+    // log(`updating timestamp:${timestamp}, old timestamt:${page.timestamp}`);
+    // page.timestamp = timestamp;
+    //   await savePageConfig(pageId, page);
   }
 }
 
@@ -1093,8 +1334,8 @@ async function onMessageWithAttachment(messageEvent) {
 // // + "2. DO NOT REPEAT  the same phrases and terms from your already written text. Use different words and expressions. Variance IS VERY IMPORTANT,  so you don't lose the audience attention."
 // // + "3. in A FIRST PERSON VIEW use phrases like “I think”, “I believe”. Write.. ";
 
-const postWriterPropmt = `**English Prompt:**
-
+const postWriterPropmt = `
+**English Prompt:**
 As a multi-lingual social media writing expert your task is to craft engaging Facebook post with your feedback on the TEXT you are reviewing.
 Your job is to:
 1. **Read and Understand the TEXT**: Carefully read the user-provided TEXT to grasp its main ideas and nuances.
@@ -1157,7 +1398,8 @@ As a multi-lingual social media writing expert inspired by the style of Meghan O
     # RESPONSE #
     The Facebook post, ingteresting and impactful translated to the same language as the original text.
 `;
-  async function createPost(content) {
+
+async function createPost(content) {
   const completion = await openai.chat.completions.create({
 
     messages: [
@@ -1278,11 +1520,15 @@ async function sendTextMessage(pageID, userID, text) {
 
 async function replyToChanges(changes, pageId) {
   console.log(`replyToChanges ${JSON.stringify(changes)}`);
-  changes.forEach(async change => {
-      if (change.field === `feed`) {
-          await replyToFeed(change.value, pageId);
-      }
-  });
+  for (let i = 0; i < changes.length; ++i) {
+    const change = changes[i];
+    if (change.field === 'messages') {
+      console.error("Unsupported field: ", change.field);
+      //await replyToMessages(change.value, pageId);
+    } else if (change.field === 'feed') {
+      await replyToFeed(change.value, pageId);
+    }
+  }
 }
 
 async function replyToFeed(value, pageId) {
@@ -1305,17 +1551,40 @@ async function replyToFeed(value, pageId) {
     return;
   }
 
-  if (value.verb != 'add' && value.verb != 'edit') return;
+  if (value.verb != 'add' && value.verb != 'edit' && value.verb != 'edited') return;
 
-  const isPost = value.item  ==='post'; // TODO: something else?
-  const userInput = value.message;
-  const postId = value.comment_id || value.post_id;
-  const userName = value.from.name
-  log(`Reply to ${value.from.name}`);
+  const page = await getPageConfig(pageId);
 
-  await submitAgentReplyToPostOrComment(userInput, pageId, userId, postId);
+  if (value.item === 'comment') {
+    log(`${userId} commented on my post`);
+    // we can store who commented on us and  send them a message
+    const postId = value.post_id;
+    const response = await axios.get(`https://graph.facebook.com/${postId}?fields=message,created_time&access_token=${page.token}`);
+    const postText =  response.data.message;
+    log(`Post text ${postText}`);
+    log(`Comment: ${value.message}`);
+    if (value.parent_id) {
+      // we have a comment on a comment
+      const parentComment = value.parent_id;
+      const responseComment = await axios.get(`https://graph.facebook.com/${parentComment}?fields=message&access_token=${page.token}`);
+      const parentCommentText =  responseComment.data.message;
+      log(`Parent comment: ${parentCommentText}`);
+    }
+//    const prompt = `Answer to this comment: "${value.message}" on the Fecbook page post using the language in which the comment is written. The post text is: ${postText}`;
+    const prompt = `Read this text:\n<<<${postText}>>>.\n\n Answer the question: "${value.message}"`;
+    await submitAgentReplyToPostOrComment(prompt, pageId, userId, value.comment_id);
+    return;
+  } else if (value.item === 'post') {
+    const isPost = value.item  ==='post'; // TODO: something else?
+    const userInput = value.message;
+    const postId = value.comment_id || value.post_id;
+    const userName = value.from.name
+    log(`Reply to ${value.from.name}`);
+    await submitAgentReplyToPostOrComment(userInput, pageId, userId, postId);
+  }
 };
 
+// const url = `https://graph.facebook.com/${pageId}_${postId}?fields=id,message,created_time&access_token=${accessToken}`;
 
 async function submitAgentReplyToPostOrComment(userInput, pageId, posterId, postId) {
   const userId = 0;
@@ -1325,30 +1594,7 @@ async function submitAgentReplyToPostOrComment(userInput, pageId, posterId, post
       console.error("No page found for pageId:", pageId);
       return;
     }
-    await sendMessengerMessage(userId, page, null);
     const userConfig = await getUserConfig(pageId, 0);
-    // const personas = await getPersonas(pageId);
-    // let personaId = userConfig.personaId;
-    // if (!personaId) {
-    //   personaId = 1;
-    // }
-    // const input = getAgentAndInput(userInput);
-    // if (input) {
-    //   personaId = input.personaId;
-    //   userInput = input.text;
-    //   logJ("input:", input);
-    // }
-
-    // let persona = personas[1]; // alway to use assistant
-    // if (!persona) {
-    //   console.error("Wrong persona id: " + personaId);
-    //   persona = personas[userConfig.personaId]
-    // }
-    // logJ("agent persona:", persona);
-    // userConfig.run_count += 1;
-    // userConfig.personaId = personaId;
-    // await saveUserConfig(pageId, userId, userConfig);
-
     const personaType = 'assistant';
 
     if (personaType === 'chat') {
@@ -1359,7 +1605,7 @@ async function submitAgentReplyToPostOrComment(userInput, pageId, posterId, post
       logJ("Message event processed by chat:", gptResponse);
       return gptResponse;
     } else if (personaType === 'assistant') {
-      log("askGptAssistant");
+      log("askAssistant");
       logJ("userConfig:", userConfig);
       if (!userConfig.threadId || userConfig.threadId === '0') {
         // TODO create a new thread
@@ -1370,6 +1616,7 @@ async function submitAgentReplyToPostOrComment(userInput, pageId, posterId, post
         await saveUserConfig(pageId, userId, userConfig);
         logJ("userConfig:", userConfig);
       }
+
       const gptResponse =  await askAssistant(page.assistantId, userConfig.threadId, userInput);
       let hasImages;
       let hasFiles;
@@ -1599,7 +1846,27 @@ function wait(duration) {
 }
 
 
-// curl -F "url=https://us-west1-newi-1694530739098.cloudfunctions.net/webhook-2/telegramBot" https://api.telegram.org/bot6360663950:AAHg6WmYMOVVdg37nqE6RCN6QhZddVZ8S_Q/setWebhook
+// curl -F "url=https://us-west1-newi-1694530739098.cloudfunctions.net/webhook-2?t_key=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&t_a=asst_4uEa9UdJRJgus4bfcXBkAPn9&t_t=6982032092:AAHINFDnOtf-U8zmA63pJuBFefv-6mT8ERo" https://api.telegram.org/bot6982032092:AAHINFDnOtf-U8zmA63pJuBFefv-6mT8ERo/setWebhook
+
+// Faclitator:
+// 6854184336:AAFSeGYG_gbdgSYM0MAUYJz6cskby00KTpE
+// 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
+// asst_R2Sp0rRyxJCA52Q9iBctQxeE
+// curl -F "url=https://us-west1-newi-1694530739098.cloudfunctions.net/webhook-2?t_key=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&t_a=asst_R2Sp0rRyxJCA52Q9iBctQxeE&t_t=6854184336:AAFSeGYG_gbdgSYM0MAUYJz6cskby00KTpE" https://api.telegram.org/bot6854184336:AAFSeGYG_gbdgSYM0MAUYJz6cskby00KTpE/setWebhook
+
+
+// Tutor
+// 6715300697:AAF8WZPg8RfnnA7CoAm1uzFx4XHbnZtML6o
+// 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
+// asst_R2Sp0rRyxJCA52Q9iBctQxeE
+// curl -F "url=https://us-west1-newi-1694530739098.cloudfunctions.net/webhook-2?t_key=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&t_a=asst_R2Sp0rRyxJCA52Q9iBctQxeE&t_t=6715300697:AAF8WZPg8RfnnA7CoAm1uzFx4XHbnZtML6o" https://api.telegram.org/bot6715300697:AAF8WZPg8RfnnA7CoAm1uzFx4XHbnZtML6o/setWebhook
+
+
+// Tester
+// 6965517547:AAGADsI_5nOhLYIlILIGqJsljh7RfYnRp7g
+// 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
+//  
+// curl -F "url=https://us-west1-newi-1694530739098.cloudfunctions.net/webhook-2?t_key=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&t_a=asst_HxTDxZkCcXvkr7N4kkDGoAoO&t_t=6965517547:AAGADsI_5nOhLYIlILIGqJsljh7RfYnRp7g" https://api.telegram.org/bot6965517547:AAGADsI_5nOhLYIlILIGqJsljh7RfYnRp7g/setWebhook
 
 
 function removeUrls(text) {
@@ -1661,79 +1928,148 @@ async function insertHtmlSnippet(url, htmlSnippet) {
     throw error;
   }
 }
-const loginPage = `
+
+const htmlStyle = `
+<style>
+  body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 0;
+      background-color: #f4f4f4;
+      color: #333;
+  }
+
+  .container {
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+  }
+
+  .greeting {
+      font-size: 24px;
+      margin-bottom: 10px;
+  }
+
+  .instruction {
+      font-size: 18px;
+      margin-bottom: 20px;
+  }
+
+  .links-list a {
+    font-size: 18px;
+    display: block;
+      margin-bottom: 10px;
+        color: #007bff;
+      text-decoration: none;
+  }
+
+  .links-list a:hover {
+      text-decoration: underline;
+  }
+
+  .footer {
+      text-align: center;
+      padding: 20px 0;
+      background-color: #ddd;
+      font-size: 14px;
+  }
+
+  .footer a {
+      color: #007bff;
+      text-decoration: none;
+  }
+
+  .footer a:hover {
+      text-decoration: underline;
+  }
+</style>
+
+`;
+
+const loginWithoutOpenAiKey = `
 <!DOCTYPE html>
 <html>
 <head>
     <title>Welcome to New-I</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 0;
-            padding: 0;
-            background-color: #f4f4f4;
-            color: #333;
-        }
-
-        .container {
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 20px;
-        }
-
-        .greeting {
-            font-size: 24px;
-            margin-bottom: 10px;
-        }
-
-        .instruction {
-            font-size: 18px;
-            margin-bottom: 20px;
-        }
-
-        .links-list a {
-          font-size: 18px;
-          display: block;
-            margin-bottom: 10px;
-              color: #007bff;
-            text-decoration: none;
-        }
-
-        .links-list a:hover {
-            text-decoration: underline;
-        }
-
-        .footer {
-            text-align: center;
-            padding: 20px 0;
-            background-color: #ddd;
-            font-size: 14px;
-        }
-
-        .footer a {
-            color: #007bff;
-            text-decoration: none;
-        }
-
-        .footer a:hover {
-            text-decoration: underline;
-        }
-    </style>
+    ${htmlStyle}
 </head>
 <body>
   <div id="fb-root"></div>
   <script async defer crossorigin="anonymous" src="https://connect.facebook.net/en_US/sdk.js#xfbml=1&version=v19.0&appId=892971785510758" nonce="YpcHTnZM"></script>
   <div>
     <div class="container">
-        <div class="greeting">Welcome to New-I!</div>
-        <div class="instruction">You are now connected to AI-HOST™ platform. To disconnect follow the <a href="https://www.facebook.com/settings/?tab=business_tools">link</a>
-        <p>Your Facebook pages are listed below. To create a new page go <a href="https://www.facebook.com/pages/creation/?ref_type=launch_point" target="_blank">here</a>';
-        </p>
+        <div class="instruction"> Please provide your OpenApi key to start using Ai-Host™ Assistants.</div>
         </div>
-        <p>You can configure page assistants by messaging these commands:
-        <br><code>/key $PAGE_PASSWORD <a href="https://platform.openai.com/api-keys" target="_blank">your-openai-api-key</a></code>
-        <br><code>/assistant $PAGE_PASSWORD <a href="https://platform.openai.com/assistants" target="_blank">your-assistant-id</a></code>
+        <div class="footer">
+        &copy; New-I, Inc. | <a href="https://new-i.ai">Visit our Website</a>
+        </div>
+    </div>
+</body>
+</html>
+`;
+
+
+const loginPage = `
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Welcome to New-I</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    ${htmlStyle}
+    <script>
+    async function notifyBackend(name, state) {
+      console.log('State change:', state); // Placeholder for backend notification
+      fetch('https://us-west1-newi-1694530739098.cloudfunctions.net/webhook-2?subscribe_state=true', {
+          method: 'POST',
+          headers: {
+              'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ pageId: name, state: state }),
+      })
+      .then(response => {
+          if (!response.ok) {
+              throw new Error('Network response was not ok.');
+          }
+          return  JSON.stringify(response.body);
+      })
+      .then(data => {
+          if(data.error) {
+            console.log("Error: " + data.error);
+          } else {
+              console.log("Success" + JSON.stringify(data));
+          }
+      })
+      .catch((error) => {
+        console.error(error)
+      });
+
+    }
+
+    function handleCheckboxChange(event) {
+      const isChecked = event.target.checked;
+      const name = event.target.name;
+      notifyBackend(name, isChecked);
+    }
+  </script>
+</head>
+<body>
+  <div id="fb-root"></div>
+  <script async defer crossorigin="anonymous" src="https://connect.facebook.net/en_US/sdk.js#xfbml=1&version=v19.0&appId=892971785510758" nonce="YpcHTnZM"></script>
+  <div>
+    <div class="container">
+    <div class="greeting">Welcome to New-I!</div>
+    <div class="instruction">
+        <p>Your Facebook and Instagram accounts are now connected to the AI-HOST™ platform.</p>
+        <p>Your Facebook pages are configured to use your <a href="https://platform.openai.com/assistants" target="_blank">OpenAI assistants.</a>
+        Each page is assigned with an assistant. By default, assistant has the name as page.</p>
+        <p>To create a new Facebook page, follow this <a href="https://www.facebook.com/pages/creation/">link</a> and login again.</p>
+        <p>To configure your assistants, use <a href="https://platform.openai.com/assistants" target="_blank">OpenAI playground</a>.</p>
+        <p>To disconnect your accounts from New-I, follow this <a href="https://www.facebook.com/settings/?tab=business_tools" target="_blank">link</a>.</p>
+    </div>
+    <p>To change OpenAI API key or assign another assitant for a page, use commands:</p>
+    <p><code>/key $PAGE_PASSWORD <a href="https://platform.openai.com/api-keys" target="_blank">your-openai-api-key</a></code></p>
+    <p><code>/assistant $PAGE_PASSWORD <a href="https://platform.openai.com/assistants" target="_blank">your-assistant-id</a></code></p>
         </p>
         <div class="instruction">
         <p>Follow <a href="https://new-i.ai/setup_pages" target="_blank">step by step instructions</a> to setup Ai-Host™ Assistants</p>
@@ -1751,8 +2087,10 @@ const loginPage = `
     </div>
 </body>
 </html>
-`
-function getPageSnippet(pageId, pageName, key, assistant, password) {
+`;
+
+//subscribe_state && req.query.subscribe_page
+function getPageSnippet(pageId, pageName, key, assistant, password, checked) {
   const shortKey = (key && key.substring(0, 10) + "..") || "undefined";
   const snippet = `
   <div>
@@ -1760,11 +2098,17 @@ function getPageSnippet(pageId, pageName, key, assistant, password) {
   <blockquote cite="https://www.facebook.com/${pageId}" class="fb-xfbml-parse-ignore">
   <a href="https://m.me/${pageId}">${pageName}</a></blockquote>
   </div>
+  <!-- Checkbox for enabling/disabling state -->
+  <label>
+    <input type="checkbox" id="stateCheckbox" name="${pageId}" title="Check to enable assistant, uncheck to disable" onchange="handleCheckboxChange(event)" ${checked}>
+    enabled
+  </label>
+  <a href= "https://platform.openai.com/assistants"  target="_blank">Configure</a>
+  <a href="https://m.me/${pageId}" target="_blank">Message ${pageName}</a>
   <code>
-  <br>/key ${password} ${shortKey}
+  /key ${password} ${shortKey}
   <br>/assistant ${password} ${assistant}
   </code>
-  <a href="https://m.me/${pageId}" target="_blank">Message ${pageName}</a>
   <hr>
   </div>
   <p>
@@ -1772,4 +2116,249 @@ function getPageSnippet(pageId, pageName, key, assistant, password) {
   return snippet;
 }
 
+
+const loginWithOpenAiKey = `
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@1/css/pico.min.css">
+    <title>Login with OpenAI API Key</title>
+    <script>
+        function sendApiKey() {
+            const apiKey = document.getElementById('api_key').value;
+            fetch('https://us-west1-newi-1694530739098.cloudfunctions.net/webhook-2?api_key=openai', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ api_key: apiKey, user_id: '$USER_ID' }),
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Network response was not ok.');
+                }
+                return  JSON.stringify(response.body);
+            })
+            .then(data => {
+                if(data.error) {
+                  console.log("Error: " + data.error);
+                    alert('Error: ' + data.error);
+                } else {
+                    console.log("Success" + JSON.stringify(data));
+                    const successMessage = data.message || 'Your API key was added successfully.';
+                    const html = data.html;
+                    if (html) {
+                      document.body.innerHTML = html;
+                    } else {
+                      document.body.innerHTML = '<main class="container"><div class="grid"><section><h2>Success!</h2><p>' + successMessage + '</p><button onclick="goBack()">Return to previous page</button></section></div></main>';
+                    }
+                }
+            })
+            .catch((error) => {
+                alert('Server error: ' + error.message);
+                document.getElementById('api_key').value = '';
+            });
+        }
+
+        function goBack() {
+            history.back();
+        }
+    </script>
+</head>
+<body>
+    <nav class="container-fluid">
+        <ul>
+            <li><strong>Login</strong></li>
+        </ul>
+        <ul>
+            <li><a href="#">Home</a></li>
+            <li><a href="#">About</a></li>
+            <li><a href="#" role="button">Contact</a></li>
+        </ul>
+    </nav>
+    <main class="container">
+        <div class="grid">
+            <section>
+                <h2>Enter OpenAI API Key</h2>
+                <input type="text" id="api_key" name="api_key" placeholder="Your OpenAI API Key" required>
+                <button type="button" onclick="sendApiKey()">Submit</button>
+            </section>
+        </div>
+    </main>
+    <footer class="container">
+        <small>
+            <a href="#">Privacy Policy</a> • <a href="#">Terms of Service</a>
+        </small>
+    </footer>
+</body>
+</html>
+
+`;
+
+const pagesFormHtml = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@1/css/pico.min.css">
+    <title>Login with OpenAI API Key</title>
+    <script>
+        function sendApiKey() {
+            data = {message: "OK"};
+                                document.body.innerHTML = '<main class="container"><div class="grid"><section><h2>Success!</h2><p>' + data.message + '</p><p>Your API key was added successfully.</p><button onclick="goBack()">Return to previous page</button></section></div></main>';
+                                sessionStorage.setItem('userID', 'ab-1234567');
+                                document.cookie = "userID=12345; path=/; expires=Fri, 31 Dec 9999 23:59:59 GMT";
+                                return "OK";
+            const apiKey = document.getElementById('api_key').value;
+            fetch('https://newi.ai/login?api_key_openai', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ api_key_openai: apiKey }),
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Network response was not ok.');
+                }
+                return response.json();
+            })
+            .then(data => {
+                if(data.error) {
+                    alert('Error: ' + data.error);
+                } else {
+                    document.body.innerHTML = '<main class="container"><div class="grid"><section><h2>Success!</h2><p>' + data.message + '</p><p>Your API key was added successfully.</p><button onclick="goBack()">Return to previous page</button></section></div></main>';
+                }
+            })
+            .catch((error) => {
+                alert('Error: ' + error.message + '. Please retry.');
+                document.getElementById('api_key').value = '';
+            });
+        }
+
+        function goBack() {
+            history.back();
+        }
+    </script>
+</head>
+<body>
+    <nav class="container-fluid">
+        <ul>
+            <li><strong>Login</strong></li>
+        </ul>
+        <ul>
+            <li><a href="#">Home</a></li>
+            <li><a href="#">About</a></li>
+            <li><a href="#" role="button">Contact</a></li>
+        </ul>
+    </nav>
+    <main class="container">
+        <div class="grid">
+            <section>
+                <h2>Enter OpenAI API Key</h2>
+                <input type="text" id="api_key" name="api_key" placeholder="Your OpenAI API Key" required>
+                <button type="button" onclick="sendApiKey()">Submit</button>
+            </section>
+        </div>
+    </main>
+    <footer class="container">
+        <small>
+            <a href="#">Privacy Policy</a> • <a href="#">Terms of Service</a>
+        </small>
+    </footer>
+</body>
+</html>
+`;
+
+function getHtmlPageForAssistant(openaiKey, assistantId) {
+  const pagesFormHtmlAssistant = `
+  <!DOCTYPE html>
+  <html lang="en">
+  <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1">
+      <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@1/css/pico.min.css">
+      <title>Data Structure Properties</title>
+  </head>
+  <body>
+      <nav class="container-fluid">
+          <ul>
+              <li><strong>Data Structure</strong></li>
+          </ul>
+          <ul>
+              <li><a href="#">Home</a></li>
+              <li><a href="#">About</a></li>
+              <li><a href="#" role="button">Contact</a></li>
+          </ul>
+      </nav>
+      <main class="container">
+          <div class="grid">
+              <section>
+                  <h2>Data Structure Details</h2>
+                  <table>
+                      <thead>
+                          <tr>
+                              <th>Property</th>
+                              <th>Value</th>
+                          </tr>
+                      </thead>
+                      <tbody>
+                          <tr>
+                              <td>id</td>
+                              <td>asst_VySraL2iocWkZQlouqScaBR3</td>
+                          </tr>
+                          <tr>
+                              <td>object</td>
+                              <td>assistant</td>
+                          </tr>
+                          <tr>
+                              <td>created_at</td>
+                              <td>1707406508</td>
+                          </tr>
+                          <tr>
+                              <td>name</td>
+                              <td>Куратор курса</td>
+                          </tr>
+                          <tr>
+                              <td>description</td>
+                              <td>null</td>
+                          </tr>
+                          <tr>
+                              <td>model</td>
+                              <td>gpt-3.5-turbo-16k</td>
+                          </tr>
+                          <tr>
+                              <td>instructions</td>
+                              <td>Промпт для GPT: Обработка запросов о содержании курса из CSV...</td>
+                          </tr>
+                          <tr>
+                              <td>tools</td>
+                              <td>[]</td>
+                          </tr>
+                          <tr>
+                              <td>file_ids</td>
+                              <td>[]</td>
+                          </tr>
+                          <tr>
+                              <td>metadata</td>
+                              <td>{}</td>
+                          </tr>
+                      </tbody>
+                  </table>
+              </section>
+          </div>
+      </main>
+      <footer class="container">
+          <small>
+              <a href="#">Privacy Policy</a> • <a href="#">Terms of Service</a>
+          </small>
+      </footer>
+  </body>
+  </html>
+  `
+}
 //==========
