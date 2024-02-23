@@ -542,7 +542,7 @@ async function onTelegramCommand(req, res, cmd) {
   }
 }
 functions.http('webhook', async (req, res) => {
-  log("<<<<<<<< webhook");
+//  log("<<<<<<<< webhook");
   try {
     // initialization
     if (!(await loadConfig())) {
@@ -564,14 +564,17 @@ functions.http('webhook', async (req, res) => {
         onGet(req, res);
       }
     } else if (req.method === 'POST') {
-      logJ("<<<<<============ POST:", req.body);
       try {
         if (req.query.t_a || req.query.t_t) {
-            await onPostTelegram(req, res, req.query.t_a, req.query.t_t);
+          logJ("<<<TELEGRAM:", req.body);
+          await onPostTelegram(req, res, req.query.t_a, req.query.t_t);
+          log("TELEGRAM done!>>>`");
         } else if (req.body.object === 'page') {
+          logJ("<<<FACEBOOK:", req.body);
             await onPost(req, res);
-        } else if (req.body.object === 'instagram') {
-          logJ("Instagram TODO:", req.body);
+            log("FACEBOOK done!>>>`");
+          } else if (req.body.object === 'instagram') {
+          //logJ("Instagram TODO:", req.body);
         } else if (req.query.api_key) {
           await onApiKey(req, res, req.query.api_key)
           return;
@@ -587,14 +590,13 @@ functions.http('webhook', async (req, res) => {
       } catch (er) {
         log(`Error while prosessing POST: ${er}`);
       }
-      log("POST done! =======>>>>>`");
       res.status(200).send('EVENT_RECEIVED');
     }
   } catch (error) {
     log("An error occurred: " + error.message);
     res.status(200).send('Internal Server Error');
   }
-  log("webhook done >>>>>>>>>");
+//  log("webhook done >>>>>>>>>");
 });
 
 function onGet(req, res) {
@@ -1865,7 +1867,7 @@ function wait(duration) {
 // Tester
 // 6965517547:AAGADsI_5nOhLYIlILIGqJsljh7RfYnRp7g
 // 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
-//  
+//
 // curl -F "url=https://us-west1-newi-1694530739098.cloudfunctions.net/webhook-2?t_key=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&t_a=asst_HxTDxZkCcXvkr7N4kkDGoAoO&t_t=6965517547:AAGADsI_5nOhLYIlILIGqJsljh7RfYnRp7g" https://api.telegram.org/bot6965517547:AAGADsI_5nOhLYIlILIGqJsljh7RfYnRp7g/setWebhook
 
 
